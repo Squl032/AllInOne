@@ -25,35 +25,26 @@ export function registerSitSystem() {
                     activeChairs.delete(player.id);
                 }
 
+                // 📌 修改 1：將 Y 軸從 +0.4 下調為 -0.2，達到完美的沉浸高度
                 const spawnLoc = {
                     x: block.location.x + 0.5,
-                    y: block.location.y + 0.4,
+                    y: block.location.y - 0.2, 
                     z: block.location.z + 0.5
                 };
 
                 const chair = player.dimension.spawnEntity("minecraft:pig", spawnLoc);
                 chair.addTag(`chair_${player.id}`);
 
-                // 嘗試裝馬鞍 — 包 try-catch 避免版本不支援時整個炸掉
-                try {
-                    const equippable = chair.getComponent("equippable");
-                    if (equippable) {
-                        equippable.setEquipment("Saddle", new ItemStack("minecraft:saddle", 1));
-                    }
-                } catch (e) {
-                    // 退路：讓豬自己對自己掛馬鞍
-                    chair.runCommandAsync("replaceitem entity @s slot.saddle 0 saddle").catch(() => { });
-                }
                 chair.runCommandAsync("event entity @s minecraft:on_saddled").catch(() => { });
                 // chair.runCommandAsync("tp @s ~ ~-1 ~").catch(() => { });
                 // player.dimension.runCommandAsync(`event entity @e[tag=chair_${player.id},c=1] minecraft:on_saddled`).catch(() => { });
-
 
                 chair.addEffect("invisibility", 999999, { amplifier: 255, showParticles: false });
                 chair.addEffect("slowness", 999999, { amplifier: 255, showParticles: false });
                 chair.addEffect("resistance", 999999, { amplifier: 255, showParticles: false });
 
-                activeChairs.set(player.id, { entity: chair, time: Date.now() });
+                // 📌 修改 2：把設定好的 spawnLoc 一起存進去，方便輪詢時讀取
+                activeChairs.set(player.id, { entity: chair, time: Date.now(), loc: spawnLoc });
 
                 // 延遲幾 ticks 確保標籤註冊完成再執行 ride
                 system.runTimeout(() => {
@@ -69,6 +60,7 @@ export function registerSitSystem() {
         }
     });
 
+    // 📌 修改 3：輪詢從 4 tick 改為 1 tick，確保每幀都鎖定座標，畫面才不會抖動
     system.runInterval(() => {
         if (activeChairs.size === 0) return;
 
@@ -78,6 +70,13 @@ export function registerSitSystem() {
         for (const [playerId, chairData] of activeChairs.entries()) {
             const chairEntity = chairData.entity;
             const spawnTime = chairData.time;
+
+            // 📌 修改 4：物理鎖定機制，每幀把豬傳送回 -0.2 的完美座標，徹底無視防卡牆機制
+            try {
+                if (chairEntity.isValid()) {
+                    chairEntity.teleport(chairData.loc);
+                }
+            } catch (e) {}
 
             if (now - spawnTime < 1000) continue;
 
@@ -106,5 +105,5 @@ export function registerSitSystem() {
                 activeChairs.delete(playerId);
             }
         }
-    }, 4);
+    }, 1);
 }
