@@ -1,21 +1,16 @@
 import { world, system } from "@minecraft/server";
 
-// 用來記錄每個玩家「最後一次受傷的時間」
 const lastHurtTime = new Map();
 
 export function registerRegenSystem() {
 
-    // 1. 監聽實體受傷事件
     world.afterEvents.entityHurt.subscribe((event) => {
         const entity = event.hurtEntity;
-
-        // 只有玩家受傷才需要記錄
         if (entity.typeId === "minecraft:player") {
             lastHurtTime.set(entity.id, Date.now());
         }
     });
 
-    // 2. 定期檢查脫戰狀態 (每 10 個 tick，也就是 0.5 秒檢查一次)
     system.runInterval(() => {
         const now = Date.now();
         const allPlayers = world.getAllPlayers();
@@ -24,32 +19,25 @@ export function registerRegenSystem() {
             if (lastHurtTime.has(player.id)) {
                 const lastHurt = lastHurtTime.get(player.id);
 
-                // 如果現在時間距離最後一次受傷已經超過 10000 毫秒 (10秒)
                 if (now - lastHurt >= 10000) {
                     const healthComp = player.getComponent("health");
 
-                    if (healthComp) {
-                        // 檢查是否還沒滿血
-                        if (healthComp.currentValue < healthComp.effectiveMax) {
-                            // 瞬間補滿
-                            healthComp.setCurrentValue(healthComp.effectiveMax);
+                    if (healthComp && healthComp.currentValue < healthComp.effectiveMax) {
+                        // 🌟 核心修改：給予 20 tick (1秒) 的恢復 255 效果，隱藏粒子
+                        player.addEffect("regeneration", 20, { amplifier: 255, showParticles: false });
 
-                            // 播放一個輕快的音效提示玩家已脫戰回血
-                            player.playSound("random.levelup", { pitch: 2.0, volume: 0.5 });
-
-                            // 顯示全英文提示
-                            player.onScreenDisplay.setActionBar("§aOut of combat: Health fully restored!§r");
-                        }
+                        player.playSound("random.levelup", { pitch: 2.0, volume: 0.5 });
+                        player.onScreenDisplay.setActionBar("§aOut of combat: Health rapidly restoring!§r");
                     }
 
-                    // 已經觸發過回血了，就把記錄刪掉，直到他下次受傷才重新計時
                     lastHurtTime.delete(player.id);
                 }
             } else {
-                // 如果玩家剛進伺服器，Map 裡沒有紀錄，但血量不滿，也可以幫他補滿
+                // 若不在戰鬥狀態中，但血量未滿 (例如剛登入伺服器、或是中毒扣血但沒觸發受傷事件)
+                // 則在背景靜默給予恢復效果，不播放音效避免吵人
                 const healthComp = player.getComponent("health");
                 if (healthComp && healthComp.currentValue < healthComp.effectiveMax) {
-                    healthComp.setCurrentValue(healthComp.effectiveMax);
+                    player.addEffect("regeneration", 20, { amplifier: 255, showParticles: false });
                 }
             }
         }
