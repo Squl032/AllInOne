@@ -7,6 +7,8 @@ import { registerDeathSystem } from "./modules/death.js";
 import { registerCrazySystem } from "./modules/crazy.js";
 import { registerSitSystem } from "./modules/sit.js";
 import { registerRegenSystem } from "./modules/regen.js";
+import { registerSpeedBuildSystem } from "./modules/speedbuild.js";
+import { registerQuickStoreSystem } from "./modules/quickstore.js";
 
 initializeSystem();
 
@@ -18,3 +20,5 @@ registerDeathSystem();
 registerCrazySystem();
 registerSitSystem();
 registerRegenSystem();
+registerSpeedBuildSystem();
+registerQuickStoreSystem();
