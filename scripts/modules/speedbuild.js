@@ -45,6 +45,16 @@ function isUnbreakable(typeId) {
     return false;
 }
 
+// 🌟 保留植物與農作物的特判，這是絕對神權的啟動條件
+function isFragilePlant(id) {
+    return id.includes("mushroom") || id.includes("grass") || id.includes("flower") ||
+        id.includes("fern") || id.includes("bush") || id.includes("sapling") ||
+        id.includes("plant") || id.includes("reeds") || id.includes("crop") ||
+        id.includes("fungus") || id.includes("roots") || id.includes("vines") ||
+        id.includes("wheat") || id.includes("carrots") || id.includes("potatoes") ||
+        id.includes("beetroot") || id.includes("propagule");
+}
+
 export function registerSpeedBuildSystem() {
 
     // ==========================================
@@ -64,7 +74,6 @@ export function registerSpeedBuildSystem() {
         if (block.isAir) return;
 
         const blockTypeId = block.typeId;
-        // 防護鎖：絕對不拆基岩與指令方塊
         if (isUnbreakable(blockTypeId)) return;
 
         let itemToGive = undefined;
@@ -125,7 +134,7 @@ export function registerSpeedBuildSystem() {
     });
 
     // ==========================================
-    // 2. 右鍵強制放置方塊 (修正：完美神權與錯誤修復版)
+    // 2. 右鍵強制放置方塊 (全功能完美修復版)
     // ==========================================
     world.beforeEvents.playerInteractWithBlock.subscribe((event) => {
         const player = event.player;
@@ -138,8 +147,7 @@ export function registerSpeedBuildSystem() {
         const headItem = equippable.getEquipmentSlot(EquipmentSlot.Head).getItem();
         if (!headItem || headItem.typeId !== "minecraft:cactus") return;
 
-        // 🌟 就是這行！之前我不小心打成 event.hitBlock 導致整個腳本死當
-        const block = event.block;
+        const block = event.block; // 這裡的錯字已經修好，不會再當機了
         const itemTypeId = item.typeId;
 
         if (block.typeId === "minecraft:flower_pot") {
@@ -198,11 +206,17 @@ export function registerSpeedBuildSystem() {
         else isTopHalf = faceLoc.y - block.location.y >= 0.5;
 
         const rotY = player.getRotation().y;
-        let weirdoDir = 2; let cardinalDir = "south"; let doorDir = 1;
-        if (rotY >= -45 && rotY < 45) { weirdoDir = 2; cardinalDir = "south"; doorDir = 1; }
-        else if (rotY >= 45 && rotY < 135) { weirdoDir = 1; cardinalDir = "west"; doorDir = 2; }
-        else if (rotY >= -135 && rotY < -44) { weirdoDir = 0; cardinalDir = "east"; doorDir = 0; }
-        else { weirdoDir = 3; cardinalDir = "north"; doorDir = 3; }
+        let weirdoDir = 2; let cardinalDir = "south"; let doorDir = 1; let trapdoorDir = 0;
+
+        if (rotY >= -45 && rotY < 45) {
+            weirdoDir = 2; cardinalDir = "south"; doorDir = 1; trapdoorDir = 0;
+        } else if (rotY >= 45 && rotY < 135) {
+            weirdoDir = 1; cardinalDir = "west"; doorDir = 2; trapdoorDir = 1;
+        } else if (rotY >= -135 && rotY < -44) {
+            weirdoDir = 0; cardinalDir = "east"; doorDir = 0; trapdoorDir = 3;
+        } else {
+            weirdoDir = 3; cardinalDir = "north"; doorDir = 3; trapdoorDir = 2;
+        }
 
         let pillarAxis = "y";
         if (face === "west" || face === "east") pillarAxis = "x";
@@ -216,17 +230,57 @@ export function registerSpeedBuildSystem() {
             try {
                 let perm = BlockPermutation.resolve(blockTypeId);
                 const states = perm.getAllStates();
+                const isTwoTall = "upper_block_bit" in states;
+
+                // 🌟 核心救贖：把 setblock replace 神權給加回來！
+                // 針對草類、蘑菇等，動用絕對神權無視亮度與基岩限制
+                if (isFragilePlant(blockTypeId)) {
+                    if (isTwoTall) {
+                        const blockAbove = dimension.getBlock({ x: targetLoc.x, y: targetLoc.y + 1, z: targetLoc.z });
+                        if (!blockAbove) return;
+                        dimension.runCommandAsync(`setblock ${targetLoc.x} ${targetLoc.y} ${targetLoc.z} ${blockTypeId} ["upper_block_bit":false] replace`);
+                        dimension.runCommandAsync(`setblock ${targetLoc.x} ${targetLoc.y + 1} ${targetLoc.z} ${blockTypeId} ["upper_block_bit":true] replace`);
+                    } else {
+                        if (blockTypeId === "minecraft:sea_pickle") {
+                            dimension.runCommandAsync(`setblock ${targetLoc.x} ${targetLoc.y} ${targetLoc.z} ${blockTypeId} ["waterlogged":false] replace`);
+                        } else {
+                            dimension.runCommandAsync(`setblock ${targetLoc.x} ${targetLoc.y} ${targetLoc.z} ${blockTypeId} replace`);
+                        }
+                    }
+
+                    const isCreative = [...world.getPlayers({ gameMode: "creative" })].some(p => p.id === player.id);
+                    if (!isCreative) {
+                        const mainhandSlot = equippable.getEquipmentSlot(EquipmentSlot.Mainhand);
+                        if (item.amount > 1) {
+                            item.amount -= 1; mainhandSlot.setItem(item);
+                        } else { mainhandSlot.setItem(undefined); }
+                    }
+                    if (blockTypeId === "minecraft:sea_pickle") {
+                        player.playSound("sea_pickle.place", { location: targetLoc, pitch: 1.0, volume: 1.0 });
+                    } else {
+                        player.playSound("use.grass", { location: targetLoc, pitch: 1.0, volume: 1.0 });
+                    }
+                    return; // 執行完神權指令，直接結束這次放置
+                }
+
+                // --- 針對活板門、柵欄門、半磚、一般門，維持完美的 BlockPermutation ---
+                let finalDirection = doorDir;
+                if (blockTypeId.includes("trapdoor") || blockTypeId.includes("fence_gate")) {
+                    finalDirection = trapdoorDir;
+                }
 
                 if ("minecraft:vertical_half" in states) perm = perm.withState("minecraft:vertical_half", isTopHalf ? "top" : "bottom");
                 if ("upside_down_bit" in states) perm = perm.withState("upside_down_bit", isTopHalf);
                 if ("weirdo_direction" in states) perm = perm.withState("weirdo_direction", weirdoDir);
                 if ("minecraft:cardinal_direction" in states) perm = perm.withState("minecraft:cardinal_direction", cardinalDir);
                 if ("pillar_axis" in states) perm = perm.withState("pillar_axis", pillarAxis);
-                if ("direction" in states) perm = perm.withState("direction", doorDir);
+                if ("direction" in states) perm = perm.withState("direction", finalDirection);
+
+                // 強制關好門
+                if ("open_bit" in states) perm = perm.withState("open_bit", false);
+
                 if ("hanging" in states) { const isHanging = (face !== "up"); perm = perm.withState("hanging", isHanging); }
                 if ("dripstone_thickness" in states) perm = perm.withState("dripstone_thickness", "tip");
-
-                const isTwoTall = "upper_block_bit" in states;
 
                 if (isTwoTall) {
                     const blockAbove = dimension.getBlock({ x: targetLoc.x, y: targetLoc.y + 1, z: targetLoc.z });
@@ -240,31 +294,20 @@ export function registerSpeedBuildSystem() {
                 const isCreative = [...world.getPlayers({ gameMode: "creative" })].some(p => p.id === player.id);
                 if (!isCreative) {
                     const mainhandSlot = equippable.getEquipmentSlot(EquipmentSlot.Mainhand);
-                    const currentMainhand = mainhandSlot.getItem();
-
-                    if (currentMainhand && currentMainhand.typeId === itemTypeId) {
-                        if (currentMainhand.amount > 1) {
-                            currentMainhand.amount -= 1;
-                            mainhandSlot.setItem(currentMainhand);
-                        } else {
-                            mainhandSlot.setItem(undefined);
-                        }
-                    }
+                    if (item.amount > 1) {
+                        item.amount -= 1; mainhandSlot.setItem(item);
+                    } else { mainhandSlot.setItem(undefined); }
                 }
 
                 if (blockTypeId.includes("dripstone") || blockTypeId.includes("coral")) {
                     player.playSound("stone.stone_brick.place", { location: targetLoc, pitch: 1.0, volume: 1.0 });
-                } else if (blockTypeId.includes("sea_pickle")) {
-                    player.playSound("sea_pickle.place", { location: targetLoc, pitch: 1.0, volume: 1.0 });
-                } else if (blockTypeId.includes("door")) {
+                } else if (blockTypeId.includes("door") || blockTypeId.includes("trapdoor") || blockTypeId.includes("fence")) {
                     player.playSound("use.wood", { location: targetLoc, pitch: 1.0, volume: 1.0 });
                 } else {
                     player.playSound("use.stone", { location: targetLoc, pitch: 1.0, volume: 1.0 });
                 }
 
-            } catch (e) {
-                // 如果手持非方塊物體點擊（例如拿劍點擊），則會跳到這裡，不執行任何動作
-            }
+            } catch (e) { }
         });
     });
 }

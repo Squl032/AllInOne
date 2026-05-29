@@ -2,7 +2,7 @@ import { world, system, EquipmentSlot, ItemComponentTypes } from "@minecraft/ser
 
 const dynamicLights = new Map();
 const playerStates = new Map();
-const kissCooldown = new Map();
+const kissCooldown = new Map(); // 這裡將轉為儲存雙人互動狀態物件 { lastHeartTime, wasTouching }
 
 // --- 守門員：檢查物品是否帶有特殊屬性 (名稱/Lore/附魔) ---
 function hasUnsafeProperties(item) {
@@ -17,7 +17,6 @@ function hasUnsafeProperties(item) {
     // 3. 檢查是否有附魔
     try {
         const enchants = item.getComponent(ItemComponentTypes.Enchantable);
-        // 相容不同版本的 API 寫法
         if (enchants) {
             const enchData = enchants.getEnchantments();
             if (enchData && enchData.length > 0) return true; // 陣列格式
@@ -42,6 +41,9 @@ export function startTickLoop() {
             const state = playerStates.get(p1Id) || { isSneaking: false, lastSneakTime: 0 };
             const isSneaking = p1.isSneaking;
 
+            // 🌟 核心紀錄：在狀態被覆蓋前，精準捕捉 P1 是否「剛按下蹲下」的瞬間
+            const p1JustSneaked = isSneaking && !state.isSneaking;
+
             // --- A. Double-Sneak Offhand Swap (Guard Clause Version) ---
             if (isSneaking && !state.isSneaking) {
                 if (now - state.lastSneakTime < 350) {
@@ -50,29 +52,22 @@ export function startTickLoop() {
                     const mainItem = mainSlot.getItem();
                     const offItem = offSlot.getItem();
 
-                    // 檢查主手物品是否安全
                     if (mainItem && hasUnsafeProperties(mainItem)) {
                         p1.onScreenDisplay.setActionBar("§7Couldn't transfer item with nametag/enchantment/nbt§r");
                     } else {
-                        // 取得物品耐久度 (如果有)
                         let damage = 0;
                         if (mainItem) {
                             const durComp = mainItem.getComponent(ItemComponentTypes.Durability);
                             if (durComp) damage = durComp.damage;
                         }
 
-                        // 1. 把副手的東西安穩地放回主手 (使用 API，保證不吃掉副手物品的附魔)
                         mainSlot.setItem(offItem);
 
-                        // 2. 把主手的普通物品硬塞進副手 (使用指令)
                         if (mainItem) {
-                            // 嘗試執行 /replaceitem，並將耐久度數值傳遞進去
                             p1.runCommandAsync(`replaceitem entity @s slot.weapon.offhand 0 ${mainItem.typeId} ${mainItem.amount} ${damage}`).catch(() => {
-                                // 如果伺服器版本較新，移除了 replaceitem，則 fallback 到新版指令
                                 p1.runCommandAsync(`item replace entity @s slot.weapon.offhand 0 with ${mainItem.typeId} ${mainItem.amount}`).catch(() => { });
                             });
                         } else {
-                            // 如果主手本來就是空的，直接清空副手即可
                             offSlot.setItem(undefined);
                         }
 
@@ -116,30 +111,60 @@ export function startTickLoop() {
                 dynamicLights.delete(p1Id);
             }
 
-            // --- C. Double Sneak Kiss ---
-            if (isSneaking) {
-                for (let j = i + 1; j < players.length; j++) {
-                    const p2 = players[j];
-                    if (!p2.isSneaking) continue;
+            // --- C. Double Sneak Kiss (🌟 終極狂按與前後狂蹭版) ---
+            for (let j = i + 1; j < players.length; j++) {
+                const p2 = players[j];
+                const p2Id = p2.id;
 
-                    const dx = p1.location.x - p2.location.x;
-                    const dy = p1.location.y - p2.location.y;
-                    const dz = p1.location.z - p2.location.z;
-                    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                // 計算兩人的即時距離
+                const dx = p1.location.x - p2.location.x;
+                const dy = p1.location.y - p2.location.y;
+                const dz = p1.location.z - p2.location.z;
+                const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+                const isTouching = distance < 1.2; // 判定範圍
 
-                    if (distance < 1.2) {
-                        const pairId = `${p1Id}-${p2.id}`;
-                        if (!kissCooldown.has(pairId) || now - kissCooldown.get(pairId) > 2000) {
-                            kissCooldown.set(pairId, now);
+                const pairId = `${p1Id}-${p2Id}`;
+                if (!kissCooldown.has(pairId)) {
+                    kissCooldown.set(pairId, { lastHeartTime: 0, wasTouching: false });
+                }
+                const pairState = kissCooldown.get(pairId);
+
+                // 當兩人都處於蹲下狀態且貼在一起時，才觸發愛心邏輯
+                if (isSneaking && p2.isSneaking && isTouching) {
+                    // 獲取 P2 上一次的狀態，判定 P2 是否也是剛剛按下蹲下
+                    const p2State = playerStates.get(p2Id);
+                    const p2JustSneaked = p2.isSneaking && !(p2State?.isSneaking);
+
+                    // 判定兩人是否為「剛碰到彼此」的瞬間 (前前後後狂蹭)
+                    const justTouched = isTouching && !pairState.wasTouching;
+
+                    let shouldSpawnHeart = false;
+
+                    // 1. 有人一直 Spam 蹲下 (任何一方剛按蹲下)
+                    // 2. 有人前前後後走動 (剛碰觸到彼此)
+                    if (p1JustSneaked || p2JustSneaked || justTouched) {
+                        shouldSpawnHeart = true;
+                    }
+                    // 3. 兩人保持蹲下且黏在一起 (保持固定的冒愛心頻率，此處設為 800 毫秒)
+                    else if (now - pairState.lastHeartTime > 800) {
+                        shouldSpawnHeart = true;
+                    }
+
+                    if (shouldSpawnHeart) {
+                        pairState.lastHeartTime = now;
+                        try {
                             p1.dimension.spawnParticle("minecraft:heart_particle", {
                                 x: (p1.location.x + p2.location.x) / 2,
                                 y: ((p1.location.y + p2.location.y) / 2) + 1.5,
                                 z: (p1.location.z + p2.location.z) / 2
                             });
                             p1.dimension.playSound("random.pop", p1.location, { pitch: 1.5, volume: 0.5 });
-                        }
+                        } catch (e) { }
                     }
                 }
+
+                // 持續在每 Tick 更新碰觸歷史狀態，確保「前前後後」的判定百分之百精準
+                pairState.wasTouching = isTouching;
             }
         }
     }, 2);
