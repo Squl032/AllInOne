@@ -13,11 +13,12 @@ export function registerCombatSystem() {
                     let dx = victim.location.x - attacker.location.x;
                     let dz = victim.location.z - attacker.location.z;
                     const distance = Math.sqrt(dx * dx + dz * dz);
-                    const force = Math.PI / 10 + 0.1;
-                    
+                    const force = Math.PI / 10 + 0.045;
+                    const verticalBoost = Math.PI / 10 + 0.0801;
+
                     if (distance > 0) {
                         victim.clearVelocity();
-                        victim.applyImpulse({ x: (dx / distance) * force, y: force, z: (dz / distance) * force });
+                        victim.applyImpulse({ x: (dx / distance) * verticalBoost, y: force, z: (dz / distance) * verticalBoost });
                     }
                 }
 
