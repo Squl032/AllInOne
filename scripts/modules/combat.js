@@ -13,8 +13,8 @@ export function registerCombatSystem() {
                     let dx = victim.location.x - attacker.location.x;
                     let dz = victim.location.z - attacker.location.z;
                     const distance = Math.sqrt(dx * dx + dz * dz);
-                    const force = Math.PI / 10 + 0.045;
-                    const verticalBoost = Math.PI / 10 + 0.0801;
+                    const force = Math.PI / 10 + 0.043;
+                    const verticalBoost = Math.PI / 10 + 0.0785;
 
                     if (distance > 0) {
                         victim.clearVelocity();
