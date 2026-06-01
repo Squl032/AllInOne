@@ -10,6 +10,7 @@ import { registerRegenSystem } from "./modules/regen.js";
 import { registerSpeedBuildSystem } from "./modules/speedbuild.js";
 import { registerQuickStoreSystem } from "./modules/quickstore.js";
 import { registerLeashSystem } from "./modules/leash.js";
+import { registerWhitelistSystem } from "./modules/whitelist.js";
 
 initializeSystem();
 
@@ -23,4 +24,5 @@ registerSitSystem();
 registerRegenSystem();
 registerSpeedBuildSystem();
 registerQuickStoreSystem();
-registerLeashSystem()
+registerLeashSystem();
+registerWhitelistSystem();

@@ -11,10 +11,9 @@ export function registerSitSystem() {
         for (const dimName of ["overworld", "nether", "the_end"]) {
             try {
                 const dim = world.getDimension(dimName);
-                // 抓出所有帶有自訂椅子標籤的實體
                 const orphanedChairs = dim.getEntities({ tags: ["custom_chair"] });
                 for (const chair of orphanedChairs) {
-                    chair.remove(); // 直接抹除，不掉落豬肉跟鞍！
+                    chair.remove();
                 }
             } catch (e) { }
         }
@@ -26,7 +25,6 @@ export function registerSitSystem() {
 
         if (player.isSneaking) return;
 
-        // 防誤觸機制：戴著仙人掌絕對不坐下
         const equippable = player.getComponent("equippable");
         if (equippable) {
             const headItem = equippable.getEquipmentSlot(EquipmentSlot.Head).getItem();
@@ -41,7 +39,6 @@ export function registerSitSystem() {
 
         if (!isStair && !isSlab) return;
 
-        // 判斷是否為「全磚」或「上半身」
         let sitsOnTop = false;
 
         if (isSlab && typeId.includes("double")) {
@@ -57,7 +54,6 @@ export function registerSitSystem() {
             }
         } catch (e) { }
 
-        // 防窒息空間精準審查
         const dim = player.dimension;
         const { x, y, z } = block.location;
         const blockAbove1 = dim.getBlock({ x, y: y + 1, z });
@@ -73,7 +69,6 @@ export function registerSitSystem() {
         event.cancel = true;
 
         system.run(() => {
-            // 🌟 雙重保險：除了清空記憶體，也強制去世界裡抓取專屬於這個玩家的舊椅子並刪除
             try {
                 const oldChairs = dim.getEntities({ tags: [`chair_${player.id}`] });
                 for (const oldChair of oldChairs) {
@@ -82,7 +77,6 @@ export function registerSitSystem() {
             } catch (e) { }
             activeChairs.delete(player.id);
 
-            // 動態調整坐下高度
             const spawnLoc = {
                 x: x + 0.5,
                 y: sitsOnTop ? y + 0.3 : y - 0.2,
@@ -91,7 +85,7 @@ export function registerSitSystem() {
 
             const chair = dim.spawnEntity("minecraft:pig", spawnLoc);
             chair.addTag(`chair_${player.id}`);
-            chair.addTag("custom_chair"); // 🌟 加入通用標籤，為了讓重啟大掃除能抓到牠
+            chair.addTag("custom_chair");
 
             chair.runCommandAsync("event entity @s minecraft:on_saddled").catch(() => { });
 
@@ -99,7 +93,8 @@ export function registerSitSystem() {
             chair.addEffect("slowness", 999999, { amplifier: 255, showParticles: false });
             chair.addEffect("resistance", 999999, { amplifier: 255, showParticles: false });
 
-            activeChairs.set(player.id, { entity: chair, time: Date.now(), loc: spawnLoc });
+            // 🌟 核心修改 1：把「方塊原始座標(block.location)」也存進去
+            activeChairs.set(player.id, { entity: chair, time: Date.now(), loc: spawnLoc, blockLoc: { x, y, z } });
 
             system.runTimeout(() => {
                 const rideCommand = `ride @a[name="${player.name}"] start_riding @e[tag=chair_${player.id},c=1]`;
@@ -121,20 +116,27 @@ export function registerSitSystem() {
         for (const [playerId, chairData] of activeChairs.entries()) {
             const chairEntity = chairData.entity;
             const spawnTime = chairData.time;
+            const player = allPlayers.find(p => p.id === playerId);
 
             try {
                 if (chairEntity.isValid()) {
-                    chairEntity.teleport(chairData.loc);
+                    if (player) {
+                        const rot = player.getRotation();
+                        chairEntity.teleport(chairData.loc, { rotation: { x: 0, y: rot.y } });
+                        chairEntity.runCommandAsync("stopsound @a[r=5] mob.pig.say").catch(() => { });
+                        chairEntity.runCommandAsync("stopsound @a[r=5] mob.pig.step").catch(() => { });
+                    } else {
+                        chairEntity.teleport(chairData.loc);
+                    }
                 }
             } catch (e) { }
 
             if (now - spawnTime < 1000) continue;
 
-            const player = allPlayers.find(p => p.id === playerId);
             let shouldRemove = false;
 
             if (!player) {
-                shouldRemove = true; // 玩家離線，標記刪除
+                shouldRemove = true;
             } else {
                 try {
                     const dx = player.location.x - chairEntity.location.x;
@@ -142,8 +144,15 @@ export function registerSitSystem() {
                     const dz = player.location.z - chairEntity.location.z;
                     const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
+                    // 1. 檢查是否自己下車或走遠
                     if (distance > 1.5 || player.isSneaking) {
                         shouldRemove = true;
+                    } else {
+                        // 🌟 核心修改 2：檢查屁股底下的方塊還在不在！
+                        const currentBlock = player.dimension.getBlock(chairData.blockLoc);
+                        if (!currentBlock || (!currentBlock.typeId.includes("stairs") && !currentBlock.typeId.includes("slab"))) {
+                            shouldRemove = true; // 如果方塊不見了或被換成別的東西，強制摔下來！
+                        }
                     }
                 } catch (e) {
                     shouldRemove = true;
