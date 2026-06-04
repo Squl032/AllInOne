@@ -11,6 +11,7 @@ import { registerSpeedBuildSystem } from "./modules/speedbuild.js";
 import { registerQuickStoreSystem } from "./modules/quickstore.js";
 import { registerLeashSystem } from "./modules/leash.js";
 import { registerWhitelistSystem } from "./modules/whitelist.js";
+import { registerKnifeSystem } from "./modules/knife.js";
 
 initializeSystem();
 
@@ -26,3 +27,4 @@ registerSpeedBuildSystem();
 registerQuickStoreSystem();
 registerLeashSystem();
 registerWhitelistSystem();
+registerKnifeSystem();
