@@ -16,13 +16,21 @@ export function registerKnifeSystem() {
                 for (const knife of orphanedKnives) {
                     try {
                         const ownerId = knife.getDynamicProperty("ownerId");
+                        const triggerItem = knife.getDynamicProperty("triggerItem") || "minecraft:iron_sword";
                         let returned = false;
 
                         if (ownerId) {
                             const owner = world.getAllPlayers().find(p => p.id === ownerId);
                             if (owner) {
                                 const inv = owner.getComponent("inventory").container;
-                                inv.addItem(new ItemStack("minecraft:iron_sword", 1));
+                                if (triggerItem === "minecraft:nether_star") {
+                                    inv.addItem(new ItemStack("minecraft:iron_sword", 1));
+                                    const star = new ItemStack("minecraft:nether_star", 1);
+                                    star.nameTag = "§cThrow §6Knife";
+                                    inv.addItem(star);
+                                } else {
+                                    inv.addItem(new ItemStack("minecraft:iron_sword", 1));
+                                }
                                 owner.playSound("random.pop", { pitch: 1.5 });
                                 owner.onScreenDisplay.setActionBar("§aKnife returned (System Reload)!");
                                 returned = true;
@@ -30,7 +38,14 @@ export function registerKnifeSystem() {
                         }
 
                         if (!returned) {
-                            dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), knife.location);
+                            if (triggerItem === "minecraft:nether_star") {
+                                dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), knife.location);
+                                const star = new ItemStack("minecraft:nether_star", 1);
+                                star.nameTag = "§cThrow §6Knife";
+                                dim.spawnItem(star, knife.location);
+                            } else {
+                                dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), knife.location);
+                            }
                         }
                     } catch (e) { }
 
@@ -40,23 +55,88 @@ export function registerKnifeSystem() {
         }
     });
 
+    // ==========================================
+    // 1. 觸發系統 (鐵劍純右鍵 / 地獄之星雙鍵)
+    // ==========================================
     world.afterEvents.itemUse.subscribe((event) => {
         const player = event.source;
         const item = event.itemStack;
 
-        if (item.typeId !== "minecraft:iron_sword") return;
+        // 🌟 開放鐵劍與地獄之星皆可右鍵觸發
+        if (item.typeId !== "minecraft:iron_sword" && item.typeId !== "minecraft:nether_star") return;
 
-        if (!chargingPlayers.has(player.id)) {
-            chargingPlayers.set(player.id, {
-                player: player,
-                ticks: 0
-            });
+        if (item.typeId === "minecraft:nether_star") {
+            const inv = player.getComponent("inventory").container;
+            let hasSword = false;
+            for (let i = 0; i < inv.size; i++) {
+                const invItem = inv.getItem(i);
+                if (invItem && invItem.typeId === "minecraft:iron_sword") {
+                    hasSword = true;
+                    break;
+                }
+            }
+            if (!hasSword) {
+                player.onScreenDisplay.setActionBar("§cNo Iron Sword found!");
+                return;
+            }
         }
+
+        if (chargingPlayers.has(player.id)) {
+            chargingPlayers.delete(player.id);
+            player.onScreenDisplay.setActionBar("§cCharge Cancelled");
+            player.playSound("note.bass", { pitch: 0.8, volume: 1.0 });
+            return;
+        }
+
+        chargingPlayers.set(player.id, {
+            player: player,
+            ticks: 0,
+            triggerItem: item.typeId
+        });
     });
 
+    // 🌟 左鍵觸發：嚴格限制「只有地獄之星」才能用左鍵丟出，保障鐵劍的近戰功能
+    function handleLeftClick(player) {
+        if (chargingPlayers.has(player.id)) return;
+        const equippable = player.getComponent("equippable");
+        const mainhand = equippable?.getEquipmentSlot(EquipmentSlot.Mainhand)?.getItem();
+
+        if (mainhand && mainhand.typeId === "minecraft:nether_star") {
+            const inv = player.getComponent("inventory").container;
+            let hasSword = false;
+            for (let i = 0; i < inv.size; i++) {
+                const invItem = inv.getItem(i);
+                if (invItem && invItem.typeId === "minecraft:iron_sword") {
+                    hasSword = true;
+                    break;
+                }
+            }
+            if (!hasSword) {
+                player.onScreenDisplay.setActionBar("§cNo Iron Sword found!");
+                return;
+            }
+
+            chargingPlayers.set(player.id, {
+                player: player,
+                ticks: 0,
+                triggerItem: mainhand.typeId
+            });
+        }
+    }
+
+    world.afterEvents.entityHitBlock.subscribe((e) => {
+        if (e.damagingEntity.typeId === "minecraft:player") handleLeftClick(e.damagingEntity);
+    });
+
+    world.afterEvents.entityHitEntity.subscribe((e) => {
+        if (e.damagingEntity.typeId === "minecraft:player") handleLeftClick(e.damagingEntity);
+    });
+
+    // ==========================================
+    // 2. 蓄力引擎與飛刀物理迴圈
+    // ==========================================
     system.runInterval(() => {
 
-        // --- A. 蓄力系統 ---
         for (const [playerId, data] of chargingPlayers.entries()) {
             const player = data.player;
 
@@ -67,8 +147,9 @@ export function registerKnifeSystem() {
 
             const equippable = player.getComponent("equippable");
             const mainhand = equippable?.getEquipmentSlot(EquipmentSlot.Mainhand);
+            const currentItem = mainhand?.getItem();
 
-            if (!mainhand || !mainhand.hasItem() || mainhand.getItem().typeId !== "minecraft:iron_sword") {
+            if (!currentItem || currentItem.typeId !== data.triggerItem) {
                 player.onScreenDisplay.setActionBar("§cCharge Cancelled");
                 chargingPlayers.delete(playerId);
                 continue;
@@ -76,8 +157,9 @@ export function registerKnifeSystem() {
 
             const maxTicks = 10;
             const progress = Math.floor((data.ticks / maxTicks) * 10);
-            const bar = "§a■".repeat(progress) + "§7■".repeat(10 - progress);
-            player.onScreenDisplay.setActionBar(`§eCharging: ${bar}`);
+            const remainingSecs = ((maxTicks - data.ticks) / 20).toFixed(1);
+            const bar = "§a■".repeat(progress) + "§c■".repeat(10 - progress);
+            player.onScreenDisplay.setActionBar(`§6CHARGING §8[ ${bar} §8] §6${remainingSecs}s`);
 
             if (data.ticks === 0) player.playSound("note.hat", { pitch: 1.0, volume: 1.0 });
             if (data.ticks === 4) player.playSound("note.hat", { pitch: 1.3, volume: 1.0 });
@@ -86,10 +168,36 @@ export function registerKnifeSystem() {
             data.ticks++;
 
             if (data.ticks >= 10) {
-                const item = mainhand.getItem();
-                if (item.amount > 1) {
-                    item.amount -= 1;
-                    mainhand.setItem(item);
+                const inv = player.getComponent("inventory").container;
+
+                // 如果是用「地獄之星」觸發，先檢查並沒收背包裡的一把鐵劍
+                if (data.triggerItem === "minecraft:nether_star") {
+                    let swordRemoved = false;
+                    for (let i = 0; i < inv.size; i++) {
+                        const invItem = inv.getItem(i);
+                        if (invItem && invItem.typeId === "minecraft:iron_sword") {
+                            if (invItem.amount > 1) {
+                                invItem.amount -= 1;
+                                inv.setItem(i, invItem);
+                            } else {
+                                inv.setItem(i, undefined);
+                            }
+                            swordRemoved = true;
+                            break;
+                        }
+                    }
+
+                    if (!swordRemoved) {
+                        player.onScreenDisplay.setActionBar("§cCharge Cancelled: No Sword!");
+                        chargingPlayers.delete(playerId);
+                        continue;
+                    }
+                }
+
+                // 扣除手上的觸發道具 (鐵劍或地獄之星)
+                if (currentItem.amount > 1) {
+                    currentItem.amount -= 1;
+                    mainhand.setItem(currentItem);
                 } else {
                     mainhand.setItem(undefined);
                 }
@@ -99,7 +207,8 @@ export function registerKnifeSystem() {
                 const playerRot = player.getRotation();
                 const speed = 1.5;
 
-                player.playSound("random.bow", { pitch: 0.8, volume: 1.0 });
+                const randomPitch = 0.8 + Math.random() * 0.4;
+                player.playSound("mob.enderdragon.flap", { pitch: randomPitch, volume: 1.0 });
 
                 let expectedTicks = 100;
                 try {
@@ -111,6 +220,8 @@ export function registerKnifeSystem() {
                         const dz = hitLoc.z - headLoc.z;
                         const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
                         expectedTicks = Math.max(1, Math.ceil((dist - 1.0) / speed));
+
+                        if (expectedTicks > 100) expectedTicks = 100;
                     }
                 } catch (e) { }
 
@@ -129,18 +240,15 @@ export function registerKnifeSystem() {
 
                     stand.addTag("flying_knife");
                     stand.setDynamicProperty("ownerId", player.id);
+                    stand.setDynamicProperty("triggerItem", data.triggerItem);
 
                     try {
                         stand.addEffect("minecraft:invisibility", 99999, { amplifier: 255, showParticles: false });
                     } catch (e) { }
 
                     system.runTimeout(() => {
-                        try {
-                            stand.runCommandAsync("replaceitem entity @s slot.weapon.mainhand 0 iron_sword 1");
-                        } catch (e) { }
-                        try {
-                            stand.runCommandAsync("playanimation @s animation.armor_stand.no_pose a 99999");
-                        } catch (e) { }
+                        try { stand.runCommandAsync("replaceitem entity @s slot.weapon.mainhand 0 iron_sword 1"); } catch (e) { }
+                        try { stand.runCommandAsync("playanimation @s animation.armor_stand.no_pose a 99999"); } catch (e) { }
                     }, 1);
 
                     flyingKnives.add({
@@ -154,7 +262,7 @@ export function registerKnifeSystem() {
                         viewDir: viewDir,
                         dir: { x: viewDir.x * speed, y: viewDir.y * speed, z: viewDir.z * speed },
                         ownerId: player.id,
-                        typeId: "minecraft:iron_sword",
+                        triggerItem: data.triggerItem,
                         age: 0,
                         maxAge: expectedTicks
                     });
@@ -190,11 +298,8 @@ export function registerKnifeSystem() {
                     z: knife.centerLoc.z + (knife.leftZ * 0.5)
                 };
 
-                try {
-                    knife.dim.spawnParticle("minecraft:basic_crit_particle", tipLoc);
-                } catch (e) { }
+                try { knife.dim.spawnParticle("minecraft:basic_crit_particle", tipLoc); } catch (e) { }
 
-                // 更新玩家畫面的 CD 進度條
                 try {
                     const owner = world.getAllPlayers().find(p => p.id === knife.ownerId);
                     if (owner) {
@@ -205,12 +310,11 @@ export function registerKnifeSystem() {
                         if (progress < 0) progress = 0;
                         if (progress > 10) progress = 10;
 
-                        const bar = "§c■".repeat(progress) + "§7■".repeat(10 - progress);
-                        owner.onScreenDisplay.setActionBar(`§eCooldown: ${bar} §f${remainingSecs}s`);
+                        const bar = "§c■".repeat(progress) + "§a■".repeat(10 - progress);
+                        owner.onScreenDisplay.setActionBar(`§6COOLDOWN §8[ ${bar} §8] §6${remainingSecs}s`);
                     }
                 } catch (e) { }
 
-                // 精準撞牆偵測
                 try {
                     const block = knife.dim.getBlock(tipLoc);
                     if (block && !block.isAir && !block.typeId.includes("water") && !block.typeId.includes("lava")) {
@@ -221,10 +325,8 @@ export function registerKnifeSystem() {
                     shouldReturn = true;
                 }
 
-                // 🌟 暴力的生物撞擊與扣血偵測
                 if (!shouldReturn) {
                     try {
-                        // 🌟 把判定半徑加大到 2.0！防止飛刀速度太快直接穿透生物
                         const targets = knife.dim.getEntities({ location: tipLoc, maxDistance: 2.0 });
                         for (const target of targets) {
                             if (target.id !== knife.ownerId && target.typeId !== "minecraft:armor_stand" && target.typeId !== "minecraft:item") {
@@ -234,19 +336,13 @@ export function registerKnifeSystem() {
                                 if (hasHealth) {
                                     shouldReturn = true;
 
-                                    // 🌟 找回主人，並附加完整的傷害來源，保證扣血生效！
                                     const owner = world.getAllPlayers().find(p => p.id === knife.ownerId);
                                     try {
-                                        target.applyDamage(40, {
-                                            cause: "projectile",
-                                            damagingEntity: owner
-                                        });
+                                        target.applyDamage(40, { cause: "projectile", damagingEntity: owner });
                                     } catch (err) {
-                                        // 如果上面的完整寫法報錯，至少硬扣他血
                                         try { target.applyDamage(40); } catch (e) { }
                                     }
 
-                                    // 命中時播放音效並噴出爆擊粒子
                                     knife.dim.playSound("item.trident.hit", tipLoc);
                                     knife.dim.spawnParticle("minecraft:critical_hit_emitter", tipLoc);
                                     break;
@@ -256,15 +352,14 @@ export function registerKnifeSystem() {
                     } catch (e) { }
                 }
 
-                // 同步盔甲架位置
                 if (!shouldReturn) {
                     try {
                         knife.entity.teleport(standLoc, { rotation: { x: knife.rotX, y: knife.rotY } });
+                        knife.entity.runCommandAsync("playanimation @s animation.armor_stand.no_pose a 99999").catch(() => { });
                     } catch (e) { }
                 }
             }
 
-            // 處理回手邏輯
             if (shouldReturn) {
                 try {
                     if (knife.entity && knife.entity.isValid()) knife.entity.remove();
@@ -272,7 +367,15 @@ export function registerKnifeSystem() {
                     const owner = world.getAllPlayers().find(p => p.id === knife.ownerId);
                     if (owner) {
                         const inv = owner.getComponent("inventory").container;
-                        inv.addItem(new ItemStack(knife.typeId, 1));
+
+                        if (knife.triggerItem === "minecraft:nether_star") {
+                            inv.addItem(new ItemStack("minecraft:iron_sword", 1));
+                            const star = new ItemStack("minecraft:nether_star", 1);
+                            star.nameTag = "§r§cThrow §6Knife";
+                            inv.addItem(star);
+                        } else {
+                            inv.addItem(new ItemStack("minecraft:iron_sword", 1));
+                        }
 
                         owner.playSound("random.pop", { pitch: 1.5 });
                         owner.onScreenDisplay.setActionBar("§aKnife returned!");
