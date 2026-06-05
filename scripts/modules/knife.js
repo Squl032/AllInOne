@@ -4,10 +4,6 @@ const flyingKnives = new Set();
 const chargingPlayers = new Map();
 
 export function registerKnifeSystem() {
-
-    // ==========================================
-    // 🌟 伺服器重啟/Reload 大掃除系統
-    // ==========================================
     system.run(() => {
         for (const dimName of ["overworld", "nether", "the_end"]) {
             try {
@@ -27,7 +23,6 @@ export function registerKnifeSystem() {
                                     if (triggerItem === "minecraft:nether_star") {
                                         inv.addItem(new ItemStack("minecraft:iron_sword", 1));
                                         const star = new ItemStack("minecraft:nether_star", 1);
-                                        // 🌟 加入 §r 重置斜體格式
                                         star.nameTag = "§r§cThrow §6Knife";
                                         inv.addItem(star);
                                     } else {
@@ -44,7 +39,6 @@ export function registerKnifeSystem() {
                             if (triggerItem === "minecraft:nether_star") {
                                 dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), knife.location);
                                 const star = new ItemStack("minecraft:nether_star", 1);
-                                // 🌟 加入 §r 重置斜體格式
                                 star.nameTag = "§r§cThrow §6Knife";
                                 dim.spawnItem(star, knife.location);
                             } else {
@@ -86,12 +80,6 @@ export function registerKnifeSystem() {
             chargingPlayers.delete(player.id);
             player.onScreenDisplay.setActionBar("§cCharge Cancelled");
             player.playSound("note.bass", { pitch: 0.8, volume: 1.0 });
-            // const data = chargingPlayers.get(player.id);
-            // if (data.ticks > 1) {
-            //     chargingPlayers.delete(player.id);
-            //     player.onScreenDisplay.setActionBar("§cCharge Cancelled");
-            //     player.playSound("note.bass", { pitch: 0.8, volume: 1.0 });
-            // }
             return;
         }
 
@@ -379,7 +367,6 @@ export function registerKnifeSystem() {
                             if (knife.triggerItem === "minecraft:nether_star") {
                                 inv.addItem(new ItemStack("minecraft:iron_sword", 1));
                                 const star = new ItemStack("minecraft:nether_star", 1);
-                                // 🌟 加入 §r 重置斜體格式
                                 star.nameTag = "§r§cThrow §6Knife";
                                 inv.addItem(star);
                             } else {
@@ -390,7 +377,6 @@ export function registerKnifeSystem() {
                             if (knife.triggerItem === "minecraft:nether_star") {
                                 dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), owner.location);
                                 const star = new ItemStack("minecraft:nether_star", 1);
-                                // 🌟 加入 §r 重置斜體格式
                                 star.nameTag = "§r§cThrow §6Knife";
                                 dim.spawnItem(star, owner.location);
                             } else {
