@@ -23,14 +23,17 @@ export function registerKnifeSystem() {
                             const owner = world.getAllPlayers().find(p => p.id === ownerId);
                             if (owner) {
                                 const inv = owner.getComponent("inventory").container;
-                                if (triggerItem === "minecraft:nether_star") {
-                                    inv.addItem(new ItemStack("minecraft:iron_sword", 1));
-                                    const star = new ItemStack("minecraft:nether_star", 1);
-                                    star.nameTag = "§cThrow §6Knife";
-                                    inv.addItem(star);
-                                } else {
-                                    inv.addItem(new ItemStack("minecraft:iron_sword", 1));
-                                }
+                                try {
+                                    if (triggerItem === "minecraft:nether_star") {
+                                        inv.addItem(new ItemStack("minecraft:iron_sword", 1));
+                                        const star = new ItemStack("minecraft:nether_star", 1);
+                                        // 🌟 加入 §r 重置斜體格式
+                                        star.nameTag = "§r§cThrow §6Knife";
+                                        inv.addItem(star);
+                                    } else {
+                                        inv.addItem(new ItemStack("minecraft:iron_sword", 1));
+                                    }
+                                } catch (e) { }
                                 owner.playSound("random.pop", { pitch: 1.5 });
                                 owner.onScreenDisplay.setActionBar("§aKnife returned (System Reload)!");
                                 returned = true;
@@ -41,7 +44,8 @@ export function registerKnifeSystem() {
                             if (triggerItem === "minecraft:nether_star") {
                                 dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), knife.location);
                                 const star = new ItemStack("minecraft:nether_star", 1);
-                                star.nameTag = "§cThrow §6Knife";
+                                // 🌟 加入 §r 重置斜體格式
+                                star.nameTag = "§r§cThrow §6Knife";
                                 dim.spawnItem(star, knife.location);
                             } else {
                                 dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), knife.location);
@@ -58,11 +62,8 @@ export function registerKnifeSystem() {
     // ==========================================
     // 1. 觸發系統 (鐵劍純右鍵 / 地獄之星雙鍵)
     // ==========================================
-    world.afterEvents.itemUse.subscribe((event) => {
-        const player = event.source;
-        const item = event.itemStack;
-
-        // 🌟 開放鐵劍與地獄之星皆可右鍵觸發
+    function handleRightClick(player, item) {
+        if (!item) return;
         if (item.typeId !== "minecraft:iron_sword" && item.typeId !== "minecraft:nether_star") return;
 
         if (item.typeId === "minecraft:nether_star") {
@@ -85,6 +86,12 @@ export function registerKnifeSystem() {
             chargingPlayers.delete(player.id);
             player.onScreenDisplay.setActionBar("§cCharge Cancelled");
             player.playSound("note.bass", { pitch: 0.8, volume: 1.0 });
+            // const data = chargingPlayers.get(player.id);
+            // if (data.ticks > 1) {
+            //     chargingPlayers.delete(player.id);
+            //     player.onScreenDisplay.setActionBar("§cCharge Cancelled");
+            //     player.playSound("note.bass", { pitch: 0.8, volume: 1.0 });
+            // }
             return;
         }
 
@@ -93,9 +100,11 @@ export function registerKnifeSystem() {
             ticks: 0,
             triggerItem: item.typeId
         });
-    });
+    }
 
-    // 🌟 左鍵觸發：嚴格限制「只有地獄之星」才能用左鍵丟出，保障鐵劍的近戰功能
+    world.afterEvents.itemUse.subscribe((event) => handleRightClick(event.source, event.itemStack));
+    world.afterEvents.itemUseOn.subscribe((event) => handleRightClick(event.source, event.itemStack));
+
     function handleLeftClick(player) {
         if (chargingPlayers.has(player.id)) return;
         const equippable = player.getComponent("equippable");
@@ -170,7 +179,6 @@ export function registerKnifeSystem() {
             if (data.ticks >= 10) {
                 const inv = player.getComponent("inventory").container;
 
-                // 如果是用「地獄之星」觸發，先檢查並沒收背包裡的一把鐵劍
                 if (data.triggerItem === "minecraft:nether_star") {
                     let swordRemoved = false;
                     for (let i = 0; i < inv.size; i++) {
@@ -194,7 +202,6 @@ export function registerKnifeSystem() {
                     }
                 }
 
-                // 扣除手上的觸發道具 (鐵劍或地獄之星)
                 if (currentItem.amount > 1) {
                     currentItem.amount -= 1;
                     mainhand.setItem(currentItem);
@@ -248,7 +255,7 @@ export function registerKnifeSystem() {
 
                     system.runTimeout(() => {
                         try { stand.runCommandAsync("replaceitem entity @s slot.weapon.mainhand 0 iron_sword 1"); } catch (e) { }
-                        try { stand.runCommandAsync("playanimation @s animation.armor_stand.no_pose a 99999"); } catch (e) { }
+                        try { stand.setProperty("minecraft:pose_index", 0); } catch (e) { }
                     }, 1);
 
                     flyingKnives.add({
@@ -355,7 +362,7 @@ export function registerKnifeSystem() {
                 if (!shouldReturn) {
                     try {
                         knife.entity.teleport(standLoc, { rotation: { x: knife.rotX, y: knife.rotY } });
-                        knife.entity.runCommandAsync("playanimation @s animation.armor_stand.no_pose a 99999").catch(() => { });
+                        knife.entity.setProperty("minecraft:pose_index", 0);
                     } catch (e) { }
                 }
             }
@@ -368,13 +375,27 @@ export function registerKnifeSystem() {
                     if (owner) {
                         const inv = owner.getComponent("inventory").container;
 
-                        if (knife.triggerItem === "minecraft:nether_star") {
-                            inv.addItem(new ItemStack("minecraft:iron_sword", 1));
-                            const star = new ItemStack("minecraft:nether_star", 1);
-                            star.nameTag = "§r§cThrow §6Knife";
-                            inv.addItem(star);
-                        } else {
-                            inv.addItem(new ItemStack("minecraft:iron_sword", 1));
+                        try {
+                            if (knife.triggerItem === "minecraft:nether_star") {
+                                inv.addItem(new ItemStack("minecraft:iron_sword", 1));
+                                const star = new ItemStack("minecraft:nether_star", 1);
+                                // 🌟 加入 §r 重置斜體格式
+                                star.nameTag = "§r§cThrow §6Knife";
+                                inv.addItem(star);
+                            } else {
+                                inv.addItem(new ItemStack("minecraft:iron_sword", 1));
+                            }
+                        } catch (e) {
+                            const dim = owner.dimension;
+                            if (knife.triggerItem === "minecraft:nether_star") {
+                                dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), owner.location);
+                                const star = new ItemStack("minecraft:nether_star", 1);
+                                // 🌟 加入 §r 重置斜體格式
+                                star.nameTag = "§r§cThrow §6Knife";
+                                dim.spawnItem(star, owner.location);
+                            } else {
+                                dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), owner.location);
+                            }
                         }
 
                         owner.playSound("random.pop", { pitch: 1.5 });
