@@ -21,7 +21,9 @@ export function registerKnifeSystem() {
                                 const inv = owner.getComponent("inventory").container;
                                 try {
                                     if (triggerItem === "minecraft:nether_star") {
-                                        inv.addItem(new ItemStack("minecraft:iron_sword", 1));
+                                        const knife = new ItemStack("minecraft:iron_sword", 1);
+                                        knife.nameTag = "§r§aKnife";
+                                        inv.addItem(knife);
                                         const star = new ItemStack("minecraft:nether_star", 1);
                                         star.nameTag = "§r§cThrow §6Knife";
                                         inv.addItem(star);
@@ -37,12 +39,16 @@ export function registerKnifeSystem() {
 
                         if (!returned) {
                             if (triggerItem === "minecraft:nether_star") {
-                                dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), knife.location);
+                                const knife = new ItemStack("minecraft:iron_sword", 1);
+                                knife.nameTag = "§r§aKnife";
+                                dim.spawnItem(knife, knife.location);
                                 const star = new ItemStack("minecraft:nether_star", 1);
                                 star.nameTag = "§r§cThrow §6Knife";
                                 dim.spawnItem(star, knife.location);
                             } else {
-                                dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), knife.location);
+                                const knife = new ItemStack("minecraft:iron_sword", 1);
+                                knife.nameTag = "§r§aKnife";
+                                dim.spawnItem(knife, knife.location);
                             }
                         }
                     } catch (e) { }
@@ -158,9 +164,9 @@ export function registerKnifeSystem() {
             const bar = "§a■".repeat(progress) + "§c■".repeat(10 - progress);
             player.onScreenDisplay.setActionBar(`§6CHARGING §8[ ${bar} §8] §6${remainingSecs}s`);
 
-            if (data.ticks === 0) player.playSound("note.hat", { pitch: 1.0, volume: 1.0 });
-            if (data.ticks === 4) player.playSound("note.hat", { pitch: 1.3, volume: 1.0 });
-            if (data.ticks === 8) player.playSound("note.hat", { pitch: 1.6, volume: 1.0 });
+            if (data.ticks === 0) player.playSound("note.hat", { pitch: 0.7, volume: 1.0 });
+            if (data.ticks === 4) player.playSound("note.hat", { pitch: 0.8, volume: 1.0 });
+            if (data.ticks === 8) player.playSound("note.hat", { pitch: 1.0, volume: 1.0 });
 
             data.ticks++;
 
@@ -365,22 +371,30 @@ export function registerKnifeSystem() {
 
                         try {
                             if (knife.triggerItem === "minecraft:nether_star") {
-                                inv.addItem(new ItemStack("minecraft:iron_sword", 1));
+                                const knife = new ItemStack("minecraft:iron_sword", 1);
+                                knife.nameTag = "§r§aKnife";
+                                inv.addItem(knife);
                                 const star = new ItemStack("minecraft:nether_star", 1);
                                 star.nameTag = "§r§cThrow §6Knife";
                                 inv.addItem(star);
                             } else {
-                                inv.addItem(new ItemStack("minecraft:iron_sword", 1));
+                                const knife = new ItemStack("minecraft:iron_sword", 1);
+                                knife.nameTag = "§r§aKnife";
+                                inv.addItem(knife);
                             }
                         } catch (e) {
                             const dim = owner.dimension;
                             if (knife.triggerItem === "minecraft:nether_star") {
-                                dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), owner.location);
+                                const knife = new ItemStack("minecraft:iron_sword", 1);
+                                knife.nameTag = "§r§aKnife";
+                                dim.spawnItem(knife, owner.location);
                                 const star = new ItemStack("minecraft:nether_star", 1);
                                 star.nameTag = "§r§cThrow §6Knife";
                                 dim.spawnItem(star, owner.location);
                             } else {
-                                dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), owner.location);
+                                const knife = new ItemStack("minecraft:iron_sword", 1);
+                                knife.nameTag = "§r§aKnife";
+                                dim.spawnItem(knife, owner.location);
                             }
                         }
 
