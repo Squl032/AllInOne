@@ -87,7 +87,7 @@ export function registerSitSystem() {
             chair.addTag(`chair_${player.id}`);
             chair.addTag("custom_chair");
 
-            chair.runCommandAsync("event entity @s minecraft:on_saddled").catch(() => { });
+            try { chair.runCommand("event entity @s minecraft:on_saddled") } catch (e) { };
 
             chair.addEffect("invisibility", 999999, { amplifier: 255, showParticles: false });
             chair.addEffect("slowness", 999999, { amplifier: 255, showParticles: false });
@@ -99,10 +99,10 @@ export function registerSitSystem() {
             system.runTimeout(() => {
                 const rideCommand = `ride @a[name="${player.name}"] start_riding @e[tag=chair_${player.id},c=1]`;
 
-                player.dimension.runCommandAsync(rideCommand).catch((e) => {
+                try { player.dimension.runCommand(rideCommand); } catch (e) {
                     try { chair.remove(); } catch (err) { }
                     activeChairs.delete(player.id);
-                });
+                }
             }, 4);
         });
     });
@@ -119,12 +119,12 @@ export function registerSitSystem() {
             const player = allPlayers.find(p => p.id === playerId);
 
             try {
-                if (chairEntity.isValid()) {
-                    if (player) {
+                if (chairEntity && chairEntity.isValid) {
+                    if (player && player.isValid) {
                         const rot = player.getRotation();
                         chairEntity.teleport(chairData.loc, { rotation: { x: 0, y: rot.y } });
-                        chairEntity.runCommandAsync("stopsound @a[r=5] mob.pig.say").catch(() => { });
-                        chairEntity.runCommandAsync("stopsound @a[r=5] mob.pig.step").catch(() => { });
+                        try { chairEntity.runCommand("stopsound @a[r=5] mob.pig.say") } catch (e) { }
+                        try { chairEntity.runCommand("stopsound @a[r=5] mob.pig.step") } catch (e) { }
                     } else {
                         chairEntity.teleport(chairData.loc);
                     }

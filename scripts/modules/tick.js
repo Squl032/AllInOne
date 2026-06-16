@@ -2,29 +2,48 @@ import { world, system, EquipmentSlot, ItemComponentTypes } from "@minecraft/ser
 
 const dynamicLights = new Map();
 const playerStates = new Map();
-const kissCooldown = new Map(); // 這裡將轉為儲存雙人互動狀態物件 { lastHeartTime, wasTouching }
+const kissCooldown = new Map();
 
 // --- 守門員：檢查物品是否帶有特殊屬性 (名稱/Lore/附魔) ---
 function hasUnsafeProperties(item) {
     if (!item) return false;
-
-    // 1. 檢查是否有自訂命名
     if (item.nameTag) return true;
-
-    // 2. 檢查是否有 Lore (物品描述)
     if (item.getLore().length > 0) return true;
-
-    // 3. 檢查是否有附魔
     try {
         const enchants = item.getComponent(ItemComponentTypes.Enchantable);
         if (enchants) {
             const enchData = enchants.getEnchantments();
-            if (enchData && enchData.length > 0) return true; // 陣列格式
-            if (enchData && enchData.slot !== undefined && !enchData.isEmpty) return true; // 物件格式
+            if (enchData && enchData.length > 0) return true;
+            if (enchData && enchData.slot !== undefined && !enchData.isEmpty) return true;
         }
     } catch (e) { }
-
     return false;
+}
+
+// 🌟 全新系統：專門獵殺 Reload 與斷線殘留的「幽靈光源」
+function clearGhostLights(player, keepKey = null) {
+    const tags = player.getTags();
+    for (const tag of tags) {
+        if (tag.startsWith("lightLoc:")) {
+            // 如果這個標籤是我們現在正站著的位置，保留它
+            if (keepKey && tag === `lightLoc:${keepKey}`) continue;
+
+            const parts = tag.split(":");
+            if (parts.length === 4) {
+                const x = parseInt(parts[1], 10);
+                const y = parseInt(parts[2], 10);
+                const z = parseInt(parts[3], 10);
+                try {
+                    const block = player.dimension.getBlock({ x, y, z });
+                    if (block && block.typeId.includes("light_block")) {
+                        block.setType("minecraft:air");
+                    }
+                } catch (e) { }
+            }
+            // 摧毀方塊後，將這個過期的座標標籤從玩家身上撕除
+            player.removeTag(tag);
+        }
+    }
 }
 
 export function startTickLoop() {
@@ -34,17 +53,18 @@ export function startTickLoop() {
 
         for (let i = 0; i < players.length; i++) {
             const p1 = players[i];
+
+            if (!p1 || !p1.isValid) continue;
+
             const equippable = p1.getComponent("equippable");
             if (!equippable) continue;
 
             const p1Id = p1.id;
             const state = playerStates.get(p1Id) || { isSneaking: false, lastSneakTime: 0 };
             const isSneaking = p1.isSneaking;
-
-            // 🌟 核心紀錄：在狀態被覆蓋前，精準捕捉 P1 是否「剛按下蹲下」的瞬間
             const p1JustSneaked = isSneaking && !state.isSneaking;
 
-            // --- A. Double-Sneak Offhand Swap (Guard Clause Version) ---
+            // --- A. Double-Sneak Offhand Swap ---
             if (isSneaking && !state.isSneaking) {
                 if (now - state.lastSneakTime < 350) {
                     const mainSlot = equippable.getEquipmentSlot(EquipmentSlot.Mainhand);
@@ -64,9 +84,13 @@ export function startTickLoop() {
                         mainSlot.setItem(offItem);
 
                         if (mainItem) {
-                            p1.runCommandAsync(`replaceitem entity @s slot.weapon.offhand 0 ${mainItem.typeId} ${mainItem.amount} ${damage}`).catch(() => {
-                                p1.runCommandAsync(`item replace entity @s slot.weapon.offhand 0 with ${mainItem.typeId} ${mainItem.amount}`).catch(() => { });
-                            });
+                            try {
+                                p1.runCommand(`replaceitem entity @s slot.weapon.offhand 0 ${mainItem.typeId} ${mainItem.amount} ${damage}`);
+                            } catch (e1) {
+                                try {
+                                    p1.runCommand(`item replace entity @s slot.weapon.offhand 0 with ${mainItem.typeId} ${mainItem.amount}`);
+                                } catch (e2) { }
+                            }
                         } else {
                             offSlot.setItem(undefined);
                         }
@@ -82,7 +106,7 @@ export function startTickLoop() {
             state.isSneaking = isSneaking;
             playerStates.set(p1Id, state);
 
-            // --- B. Dynamic Lighting ---
+            // --- B. Dynamic Lighting (🌟 標籤除錯防禦版) ---
             const mainItem = equippable.getEquipmentSlot(EquipmentSlot.Mainhand).getItem();
             const offItem = equippable.getEquipmentSlot(EquipmentSlot.Offhand).getItem();
 
@@ -91,37 +115,48 @@ export function startTickLoop() {
 
             const blockLoc = { x: Math.floor(p1.location.x), y: Math.floor(p1.location.y + 1), z: Math.floor(p1.location.z) };
             const posKey = `${blockLoc.x},${blockLoc.y},${blockLoc.z}`;
+            const tagKey = `${blockLoc.x}:${blockLoc.y}:${blockLoc.z}`;
             const lastLight = dynamicLights.get(p1Id);
 
             if (isHoldingLight) {
+                // 如果位置改變，或者剛 Reload 後發現記憶體空了
                 if (!lastLight || lastLight.key !== posKey) {
-                    if (lastLight) {
-                        const oldBlock = p1.dimension.getBlock(lastLight.loc);
-                        if (oldBlock && oldBlock.typeId === "minecraft:light_block") oldBlock.setType("minecraft:air");
-                    }
-                    const currentBlock = p1.dimension.getBlock(blockLoc);
-                    if (currentBlock && currentBlock.isAir) {
-                        currentBlock.setType("minecraft:light_block");
-                        dynamicLights.set(p1Id, { key: posKey, loc: blockLoc });
-                    }
+
+                    // 1. 清理身上所有不屬於現在位置的幽靈光標籤
+                    clearGhostLights(p1, tagKey);
+
+                    // 2. 放置新光
+                    try {
+                        const currentBlock = p1.dimension.getBlock(blockLoc);
+                        if (currentBlock && (currentBlock.typeId === "minecraft:air" || currentBlock.typeId === "minecraft:cave_air")) {
+                            currentBlock.setType("minecraft:light_block_15");
+                            dynamicLights.set(p1Id, { key: posKey, loc: blockLoc });
+
+                            // 貼上新標籤當作保險，就算伺服器這秒當機，下次上線也能清掉
+                            p1.addTag(`lightLoc:${tagKey}`);
+                        } else {
+                            // 如果這個位置不能放光(例如有水)，把記憶體清掉，讓它下一格重新判定
+                            dynamicLights.delete(p1Id);
+                        }
+                    } catch (e) { }
                 }
-            } else if (lastLight) {
-                const oldBlock = p1.dimension.getBlock(lastLight.loc);
-                if (oldBlock && oldBlock.typeId === "minecraft:light_block") oldBlock.setType("minecraft:air");
+            } else {
+                // 手上沒拿燈：啟動終極清理，銷毀所有光塊與標籤
+                clearGhostLights(p1);
                 dynamicLights.delete(p1Id);
             }
 
-            // --- C. Double Sneak Kiss (🌟 終極狂按與前後狂蹭版) ---
+            // --- C. Double Sneak Kiss ---
             for (let j = i + 1; j < players.length; j++) {
                 const p2 = players[j];
-                const p2Id = p2.id;
+                if (!p2 || !p2.isValid) continue;
 
-                // 計算兩人的即時距離
+                const p2Id = p2.id;
                 const dx = p1.location.x - p2.location.x;
                 const dy = p1.location.y - p2.location.y;
                 const dz = p1.location.z - p2.location.z;
                 const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                const isTouching = distance < 1.2; // 判定範圍
+                const isTouching = distance < 1.2;
 
                 const pairId = `${p1Id}-${p2Id}`;
                 if (!kissCooldown.has(pairId)) {
@@ -129,23 +164,16 @@ export function startTickLoop() {
                 }
                 const pairState = kissCooldown.get(pairId);
 
-                // 當兩人都處於蹲下狀態且貼在一起時，才觸發愛心邏輯
                 if (isSneaking && p2.isSneaking && isTouching) {
-                    // 獲取 P2 上一次的狀態，判定 P2 是否也是剛剛按下蹲下
                     const p2State = playerStates.get(p2Id);
                     const p2JustSneaked = p2.isSneaking && !(p2State?.isSneaking);
-
-                    // 判定兩人是否為「剛碰到彼此」的瞬間 (前前後後狂蹭)
                     const justTouched = isTouching && !pairState.wasTouching;
 
                     let shouldSpawnHeart = false;
 
-                    // 1. 有人一直 Spam 蹲下 (任何一方剛按蹲下)
-                    // 2. 有人前前後後走動 (剛碰觸到彼此)
                     if (p1JustSneaked || p2JustSneaked || justTouched) {
                         shouldSpawnHeart = true;
                     }
-                    // 3. 兩人保持蹲下且黏在一起 (保持固定的冒愛心頻率，此處設為 800 毫秒)
                     else if (now - pairState.lastHeartTime > 800) {
                         shouldSpawnHeart = true;
                     }
@@ -163,7 +191,6 @@ export function startTickLoop() {
                     }
                 }
 
-                // 持續在每 Tick 更新碰觸歷史狀態，確保「前前後後」的判定百分之百精準
                 pairState.wasTouching = isTouching;
             }
         }

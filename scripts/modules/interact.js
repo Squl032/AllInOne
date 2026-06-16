@@ -32,12 +32,13 @@ export function registerInteractSystem() {
             if (activeItem) {
                 if (activeItem.typeId === "minecraft:bucket") {
                     target.dimension.playSound("mob.cow.milk", target.location, { pitch: 1.0, volume: 1.0 });
-                    player.runCommandAsync("playanimation @s animation.player.attack.rotations a 0.5");
+                    // 🌟 核心修正：刪除 Async，改為 runCommand 並加上防護
+                    try { player.runCommand("playanimation @s animation.player.attack.rotations a 0.5"); } catch (e) { }
                     handleItemExchange(player, activeSlot, activeItem, "minecraft:milk_bucket");
                     isMilking = true;
                 } else if (activeItem.typeId === "minecraft:bowl") {
                     target.dimension.playSound("mob.cow.milk", target.location, { pitch: 1.0, volume: 1.0 });
-                    player.runCommandAsync("playanimation @s animation.player.attack.rotations a 0.5");
+                    try { player.runCommand("playanimation @s animation.player.attack.rotations a 0.5"); } catch (e) { }
                     handleItemExchange(player, activeSlot, activeItem, "minecraft:mushroom_stew");
                     isMilking = true;
                 }
@@ -50,7 +51,7 @@ export function registerInteractSystem() {
                         x: target.location.x, y: target.location.y + 2.1, z: target.location.z
                     });
                     target.dimension.playSound("step.cloth", target.location, { pitch: 1.2, volume: 1.0 });
-                    player.runCommandAsync("playanimation @s animation.player.attack.rotations a 0.5");
+                    try { player.runCommand("playanimation @s animation.player.attack.rotations a 0.5"); } catch (e) { }
                 }
             }
         }

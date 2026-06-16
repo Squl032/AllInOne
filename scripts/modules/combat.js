@@ -8,6 +8,10 @@ export function registerCombatSystem() {
 
         system.run(() => {
             try {
+                // 🌟 新版 API 安全檢查：isValid 不用括號是真的
+                if (!victim || !victim.isValid) return;
+                if (attacker && !attacker.isValid) return;
+
                 // --- 物理擊退 ---
                 if (attacker && attacker.typeId === "minecraft:player") {
                     let dx = victim.location.x - attacker.location.x;
@@ -39,7 +43,7 @@ export function registerCombatSystem() {
 
                         if (originalName === "") {
                             const cleanType = victim.typeId.replace('minecraft:', '').toUpperCase();
-                            victim.nameTag = `${cleanType}\n§c${currentHp} ❤`;
+                            victim.nameTag = `${cleanType}\n§c${currentHp} ❤§r`;
                         } else if (attacker && attacker.typeId === "minecraft:player") {
                             attacker.onScreenDisplay.setActionBar(`Target: §r${originalName} §f- §a${currentHp} §c❤`);
                         }

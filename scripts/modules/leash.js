@@ -32,7 +32,8 @@ export function registerLeashSystem() {
         if (leashedPlayers.has(target.id)) {
             const data = leashedPlayers.get(target.id);
             try {
-                if (data.dummy.isValid()) data.dummy.remove();
+                // 🌟 核心修正 1：移除 isValid 的括號
+                if (data.dummy && data.dummy.isValid) data.dummy.remove();
             } catch (e) { }
             leashedPlayers.delete(target.id);
 
@@ -71,8 +72,8 @@ export function registerLeashSystem() {
             dummy.addEffect("resistance", 999999, { amplifier: 255, showParticles: false });
             dummy.addEffect("slowness", 999999, { amplifier: 255, showParticles: false });
 
-            // 讓雞被玩家牽住
-            const leashable = dummy.getComponent("leashable");
+            // 讓雞被玩家牽住 (加上 minecraft: 命名空間確保新版相容)
+            const leashable = dummy.getComponent("minecraft:leashable") || dummy.getComponent("leashable");
             if (leashable) {
                 leashable.leash(player);
             }
@@ -99,8 +100,8 @@ export function registerLeashSystem() {
 
             let shouldBreak = false;
 
-            // 如果有人斷線，或是替身雞死掉了
-            if (!target || !leasher || !dummy || !dummy.isValid()) {
+            // 🌟 核心修正 2：拔掉 dummy.isValid 括號，並加上玩家的 isValid 防護（防斷線）
+            if (!target || !target.isValid || !leasher || !leasher.isValid || !dummy || !dummy.isValid) {
                 shouldBreak = true;
             } else {
                 // 計算兩人的距離
@@ -142,10 +143,12 @@ export function registerLeashSystem() {
 
             // 處理斷繩邏輯
             if (shouldBreak) {
-                try { if (dummy && dummy.isValid()) dummy.remove(); } catch (e) { }
+                // 🌟 核心修正 3：移除 isValid 括號
+                try { if (dummy && dummy.isValid) dummy.remove(); } catch (e) { }
                 leashedPlayers.delete(targetId);
 
-                if (target) {
+                // 確保 target 還是活著/在線上才掉落物品
+                if (target && target.isValid) {
                     target.dimension.spawnItem(new ItemStack("minecraft:lead", 1), target.location);
                     target.playSound("leashknot.break", { location: target.location });
                 }

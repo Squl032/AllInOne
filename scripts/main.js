@@ -12,6 +12,7 @@ import { registerQuickStoreSystem } from "./modules/quickstore.js";
 import { registerLeashSystem } from "./modules/leash.js";
 import { registerWhitelistSystem } from "./modules/whitelist.js";
 import { registerKnifeSystem } from "./modules/knife.js";
+import { registerGreenText } from "./modules/greenText.js";
 
 initializeSystem();
 
@@ -28,3 +29,4 @@ registerQuickStoreSystem();
 registerLeashSystem();
 registerWhitelistSystem();
 registerKnifeSystem();
+registerGreenText();    

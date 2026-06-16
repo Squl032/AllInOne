@@ -35,11 +35,12 @@ function spawnCustomLoot(dimension, loc, typeId, fortuneLevel) {
         if (Math.random() < 0.02) drops.push({ id: "minecraft:poisonous_potato", count: 1 });
     }
 
-    // 將計算好的物品噴出
+    // 將計算好的物品噴出 (加上 0.5 讓物品從方塊中心噴出，防止卡牆)
+    const centerLoc = { x: loc.x + 0.5, y: loc.y + 0.5, z: loc.z + 0.5 };
     for (const drop of drops) {
         if (drop.count > 0) {
             try {
-                dimension.spawnItem(new ItemStack(drop.id, drop.count), loc);
+                dimension.spawnItem(new ItemStack(drop.id, drop.count), centerLoc);
             } catch (e) { }
         }
     }
@@ -105,24 +106,30 @@ export function registerHarvestSystem() {
                     const fortuneLevel = getFortuneLevel(activeItem);
 
                     system.run(() => {
-                        // 1. 扣除耐久度
-                        const durability = activeItem.getComponent(ItemComponentTypes.Durability) || activeItem.getComponent("minecraft:durability");
-                        if (durability) {
-                            if (durability.damage + 1 >= durability.maxDurability) {
-                                activeSlot.setItem(undefined);
-                                player.playSound("random.break");
-                            } else {
-                                durability.damage += 1;
-                                activeSlot.setItem(activeItem);
+                        try {
+                            // 🌟 核心防呆：防止玩家在右鍵瞬間登出，或方塊瞬間被炸毀
+                            if (!player || !player.isValid) return;
+                            if (!block || !block.isValid()) return;
+
+                            // 1. 扣除耐久度
+                            const durability = activeItem.getComponent(ItemComponentTypes.Durability) || activeItem.getComponent("minecraft:durability");
+                            if (durability) {
+                                if (durability.damage + 1 >= durability.maxDurability) {
+                                    activeSlot.setItem(undefined);
+                                    player.playSound("random.break");
+                                } else {
+                                    durability.damage += 1;
+                                    activeSlot.setItem(activeItem);
+                                }
                             }
-                        }
 
-                        // 2. 播放音效並補種
-                        player.playSound("dig.crop", { location: loc });
-                        block.setPermutation(block.permutation.withState("growth", 0));
+                            // 2. 播放音效並補種
+                            player.playSound("dig.crop", { location: loc });
+                            block.setPermutation(block.permutation.withState("growth", 0));
 
-                        // 3. 呼叫我們自製的「真．時運掉落」系統！
-                        spawnCustomLoot(dimension, loc, type, fortuneLevel);
+                            // 3. 呼叫我們自製的「真．時運掉落」系統！
+                            spawnCustomLoot(dimension, loc, type, fortuneLevel);
+                        } catch (e) { }
                     });
                 }
             }

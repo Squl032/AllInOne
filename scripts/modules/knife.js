@@ -4,6 +4,10 @@ const flyingKnives = new Set();
 const chargingPlayers = new Map();
 
 export function registerKnifeSystem() {
+
+    // ==========================================
+    // 🌟 伺服器重啟/Reload 大掃除系統
+    // ==========================================
     system.run(() => {
         for (const dimName of ["overworld", "nether", "the_end"]) {
             try {
@@ -28,7 +32,9 @@ export function registerKnifeSystem() {
                                         star.nameTag = "§r§cThrow §6Knife";
                                         inv.addItem(star);
                                     } else {
-                                        inv.addItem(new ItemStack("minecraft:iron_sword", 1));
+                                        const knife = new ItemStack("minecraft:iron_sword", 1);
+                                        knife.nameTag = "§r§aKnife";
+                                        inv.addItem(knife);
                                     }
                                 } catch (e) { }
                                 owner.playSound("random.pop", { pitch: 1.5 });
@@ -39,16 +45,12 @@ export function registerKnifeSystem() {
 
                         if (!returned) {
                             if (triggerItem === "minecraft:nether_star") {
-                                const knife = new ItemStack("minecraft:iron_sword", 1);
-                                knife.nameTag = "§r§aKnife";
-                                dim.spawnItem(knife, knife.location);
+                                dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), knife.location);
                                 const star = new ItemStack("minecraft:nether_star", 1);
                                 star.nameTag = "§r§cThrow §6Knife";
                                 dim.spawnItem(star, knife.location);
                             } else {
-                                const knife = new ItemStack("minecraft:iron_sword", 1);
-                                knife.nameTag = "§r§aKnife";
-                                dim.spawnItem(knife, knife.location);
+                                dim.spawnItem(new ItemStack("minecraft:iron_sword", 1), knife.location);
                             }
                         }
                     } catch (e) { }
@@ -96,8 +98,18 @@ export function registerKnifeSystem() {
         });
     }
 
-    world.afterEvents.itemUse.subscribe((event) => handleRightClick(event.source, event.itemStack));
-    world.afterEvents.itemUseOn.subscribe((event) => handleRightClick(event.source, event.itemStack));
+    if (world.afterEvents.itemUse) {
+        world.afterEvents.itemUse.subscribe((event) => handleRightClick(event.source, event.itemStack));
+    }
+    if (world.afterEvents.playerInteractWithBlock) {
+        world.afterEvents.playerInteractWithBlock.subscribe((event) => handleRightClick(event.player, event.itemStack));
+    }
+    if (world.afterEvents.playerInteractWithEntity) {
+        world.afterEvents.playerInteractWithEntity.subscribe((event) => handleRightClick(event.player, event.itemStack));
+    }
+    if (world.afterEvents.itemUseOn) {
+        world.afterEvents.itemUseOn.subscribe((event) => handleRightClick(event.source, event.itemStack));
+    }
 
     function handleLeftClick(player) {
         if (chargingPlayers.has(player.id)) return;
@@ -127,13 +139,16 @@ export function registerKnifeSystem() {
         }
     }
 
-    world.afterEvents.entityHitBlock.subscribe((e) => {
-        if (e.damagingEntity.typeId === "minecraft:player") handleLeftClick(e.damagingEntity);
-    });
-
-    world.afterEvents.entityHitEntity.subscribe((e) => {
-        if (e.damagingEntity.typeId === "minecraft:player") handleLeftClick(e.damagingEntity);
-    });
+    if (world.afterEvents.entityHitBlock) {
+        world.afterEvents.entityHitBlock.subscribe((e) => {
+            if (e.damagingEntity.typeId === "minecraft:player") handleLeftClick(e.damagingEntity);
+        });
+    }
+    if (world.afterEvents.entityHitEntity) {
+        world.afterEvents.entityHitEntity.subscribe((e) => {
+            if (e.damagingEntity.typeId === "minecraft:player") handleLeftClick(e.damagingEntity);
+        });
+    }
 
     // ==========================================
     // 2. 蓄力引擎與飛刀物理迴圈
@@ -143,7 +158,8 @@ export function registerKnifeSystem() {
         for (const [playerId, data] of chargingPlayers.entries()) {
             const player = data.player;
 
-            if (!player.isValid()) {
+            // 🌟 核心修正 1：拔除 isValid 的括號
+            if (!player.isValid) {
                 chargingPlayers.delete(playerId);
                 continue;
             }
@@ -164,8 +180,8 @@ export function registerKnifeSystem() {
             const bar = "§a■".repeat(progress) + "§c■".repeat(10 - progress);
             player.onScreenDisplay.setActionBar(`§6CHARGING §8[ ${bar} §8] §6${remainingSecs}s`);
 
-            if (data.ticks === 0) player.playSound("note.hat", { pitch: 0.7, volume: 1.0 });
-            if (data.ticks === 4) player.playSound("note.hat", { pitch: 0.8, volume: 1.0 });
+            if (data.ticks === 0) player.playSound("note.hat", { pitch: 0.65, volume: 1.0 });
+            if (data.ticks === 4) player.playSound("note.hat", { pitch: 0.78, volume: 1.0 });
             if (data.ticks === 8) player.playSound("note.hat", { pitch: 1.0, volume: 1.0 });
 
             data.ticks++;
@@ -248,7 +264,7 @@ export function registerKnifeSystem() {
                     } catch (e) { }
 
                     system.runTimeout(() => {
-                        try { stand.runCommandAsync("replaceitem entity @s slot.weapon.mainhand 0 iron_sword 1"); } catch (e) { }
+                        try { stand.runCommand("replaceitem entity @s slot.weapon.mainhand 0 iron_sword 1"); } catch (e) { }
                         try { stand.setProperty("minecraft:pose_index", 0); } catch (e) { }
                     }, 1);
 
@@ -278,7 +294,8 @@ export function registerKnifeSystem() {
             knife.age++;
             let shouldReturn = false;
 
-            if (!knife.entity.isValid() || knife.age > 100) {
+            // 🌟 核心修正 2：拔除 knife.entity.isValid 的括號
+            if (!knife.entity.isValid || knife.age > 100) {
                 shouldReturn = true;
             }
 
@@ -363,7 +380,8 @@ export function registerKnifeSystem() {
 
             if (shouldReturn) {
                 try {
-                    if (knife.entity && knife.entity.isValid()) knife.entity.remove();
+                    // 🌟 核心修正 3：拔除刀子刪除前的 isValid 括號
+                    if (knife.entity && knife.entity.isValid) knife.entity.remove();
 
                     const owner = world.getAllPlayers().find(p => p.id === knife.ownerId);
                     if (owner) {

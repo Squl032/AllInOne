@@ -1,4 +1,4 @@
-import { world, system, EquipmentSlot, ItemStack, BlockPermutation } from "@minecraft/server";
+import { world, system, EquipmentSlot, ItemStack, BlockPermutation, GameMode } from "@minecraft/server";
 
 const ITEM_TO_BLOCK = {
     "minecraft:short_grass": "minecraft:tallgrass",
@@ -45,7 +45,6 @@ function isUnbreakable(typeId) {
     return false;
 }
 
-// 🌟 保留植物與農作物的特判，這是絕對神權的啟動條件
 function isFragilePlant(id) {
     return id.includes("mushroom") || id.includes("grass") || id.includes("flower") ||
         id.includes("fern") || id.includes("bush") || id.includes("sapling") ||
@@ -55,6 +54,43 @@ function isFragilePlant(id) {
         id.includes("beetroot") || id.includes("propagule");
 }
 
+// 🌟 全新獨立函數：安全扣除手上物品 (完美解決預測回彈 BUG)
+function consumeHandItem(player, targetTypeId) {
+    // 延遲 1 Tick：等客戶端的「取消事件預測退還」結束後，強制伺服器覆蓋扣除數量！
+    system.runTimeout(() => {
+        if (!player || !player.isValid) return;
+
+        const equippable = player.getComponent("equippable");
+        if (!equippable) return;
+
+        const mainSlot = equippable.getEquipmentSlot(EquipmentSlot.Mainhand);
+        const offSlot = equippable.getEquipmentSlot(EquipmentSlot.Offhand);
+
+        let slotToUse = null;
+        let currentItem = mainSlot.getItem();
+
+        if (currentItem && currentItem.typeId === targetTypeId) {
+            slotToUse = mainSlot;
+        } else {
+            currentItem = offSlot.getItem();
+            if (currentItem && currentItem.typeId === targetTypeId) {
+                slotToUse = offSlot;
+            }
+        }
+
+        if (slotToUse && currentItem) {
+            if (currentItem.amount > 1) {
+                // 必須使用 clone()，否則系統會以為是同一個物品拒絕更新畫面
+                const clonedItem = currentItem.clone();
+                clonedItem.amount -= 1;
+                slotToUse.setItem(clonedItem);
+            } else {
+                slotToUse.setItem(undefined);
+            }
+        }
+    }, 1);
+}
+
 export function registerSpeedBuildSystem() {
 
     // ==========================================
@@ -62,7 +98,7 @@ export function registerSpeedBuildSystem() {
     // ==========================================
     world.afterEvents.entityHitBlock.subscribe((event) => {
         const player = event.damagingEntity;
-        if (player.typeId !== "minecraft:player") return;
+        if (!player || player.typeId !== "minecraft:player" || !player.isValid) return;
 
         const equippable = player.getComponent("equippable");
         if (!equippable) return;
@@ -71,60 +107,61 @@ export function registerSpeedBuildSystem() {
         if (!headItem || headItem.typeId !== "minecraft:cactus") return;
 
         const block = event.hitBlock;
-        if (block.isAir) return;
+        if (!block || block.isAir) return;
 
         const blockTypeId = block.typeId;
         if (isUnbreakable(blockTypeId)) return;
 
-        let itemToGive = undefined;
-        try { itemToGive = block.getItemStack(1); } catch (e) { }
+        const blockLoc = { x: block.location.x, y: block.location.y, z: block.location.z };
 
-        if (itemToGive) {
-            const id = itemToGive.typeId;
-            if (id.includes("water") || id.includes("lava")) {
-                itemToGive = undefined;
-            }
+        // 🌟 強化獲取掉落物邏輯：在方塊被刪除前，創造一個絕對安全的複製品！
+        let itemToGive = undefined;
+        try {
+            const rawItem = block.getItemStack(1);
+            if (rawItem) itemToGive = rawItem.clone();
+        } catch (e) { }
+
+        // 雙重保險：如果原生獲取失敗，我們手動創造一個這個方塊的 ItemStack
+        if (!itemToGive && !blockTypeId.includes("water") && !blockTypeId.includes("lava")) {
+            try { itemToGive = new ItemStack(blockTypeId, 1); } catch (e) { }
         }
 
-        let blockToClear2 = undefined;
+        let blockToClear2Loc = undefined;
         try {
             const states = block.permutation.getAllStates();
             if ("upper_block_bit" in states) {
                 if (states["upper_block_bit"]) {
-                    blockToClear2 = player.dimension.getBlock({ x: block.location.x, y: block.location.y - 1, z: block.location.z });
+                    blockToClear2Loc = { x: blockLoc.x, y: blockLoc.y - 1, z: blockLoc.z };
                 } else {
-                    blockToClear2 = player.dimension.getBlock({ x: block.location.x, y: block.location.y + 1, z: block.location.z });
+                    blockToClear2Loc = { x: blockLoc.x, y: blockLoc.y + 1, z: blockLoc.z };
                 }
             }
         } catch (e) { }
 
         system.run(() => {
-            const isCreative = [...world.getPlayers({ gameMode: "creative" })].some(p => p.id === player.id);
+            if (!player || !player.isValid) return;
 
-            player.dimension.runCommandAsync(`setblock ${block.location.x} ${block.location.y} ${block.location.z} air`);
+            const isCreative = [...world.getPlayers({ gameMode: GameMode.creative })].some(p => p.id === player.id);
 
-            if (blockToClear2 && blockToClear2.typeId === blockTypeId) {
-                player.dimension.runCommandAsync(`setblock ${blockToClear2.location.x} ${blockToClear2.location.y} ${blockToClear2.location.z} air`);
+            try { player.dimension.runCommand(`setblock ${blockLoc.x} ${blockLoc.y} ${blockLoc.z} air`); } catch (e) { }
+
+            if (blockToClear2Loc) {
+                try {
+                    const b2 = player.dimension.getBlock(blockToClear2Loc);
+                    if (b2 && b2.typeId === blockTypeId) {
+                        player.dimension.runCommand(`setblock ${blockToClear2Loc.x} ${blockToClear2Loc.y} ${blockToClear2Loc.z} air`);
+                    }
+                } catch (e) { }
             }
 
-            player.playSound("dig.stone", { location: block.location, pitch: 1.2, volume: 1.0 });
+            player.playSound("dig.stone", { location: blockLoc, pitch: 1.2, volume: 1.0 });
 
+            // 🌟 將挖掘到的方塊放入背包
             if (!isCreative && itemToGive) {
                 try {
                     const inventory = player.getComponent("inventory").container;
-                    const mainhandSlot = equippable.getEquipmentSlot(EquipmentSlot.Mainhand);
-                    const currentItem = mainhandSlot.getItem();
-
-                    let leftover = undefined;
-                    if (currentItem && currentItem.typeId === itemToGive.typeId && currentItem.amount < currentItem.maxAmount) {
-                        currentItem.amount += 1;
-                        mainhandSlot.setItem(currentItem);
-                    } else if (!currentItem) {
-                        mainhandSlot.setItem(itemToGive);
-                    } else {
-                        leftover = inventory.addItem(itemToGive);
-                    }
-
+                    // 使用 addItem，自動找空位或疊加，絕對不會卡住
+                    const leftover = inventory.addItem(itemToGive);
                     if (leftover) {
                         player.dimension.spawnItem(leftover, player.location);
                     }
@@ -134,7 +171,7 @@ export function registerSpeedBuildSystem() {
     });
 
     // ==========================================
-    // 2. 右鍵強制放置方塊 (全功能完美修復版)
+    // 2. 右鍵強制放置方塊
     // ==========================================
     world.beforeEvents.playerInteractWithBlock.subscribe((event) => {
         const player = event.player;
@@ -147,13 +184,16 @@ export function registerSpeedBuildSystem() {
         const headItem = equippable.getEquipmentSlot(EquipmentSlot.Head).getItem();
         if (!headItem || headItem.typeId !== "minecraft:cactus") return;
 
-        const block = event.block; // 這裡的錯字已經修好，不會再當機了
+        const block = event.block;
+        if (!block) return;
+        const blockLoc = block.location;
         const itemTypeId = item.typeId;
 
         if (block.typeId === "minecraft:flower_pot") {
             if (!player.isSneaking && isPotPlant(itemTypeId)) return;
         }
 
+        // --- 海泡菜特判 ---
         if (itemTypeId === "minecraft:sea_pickle" && block.typeId === "minecraft:sea_pickle") {
             const currentPerm = block.permutation;
             const currentStates = currentPerm.getAllStates();
@@ -162,15 +202,19 @@ export function registerSpeedBuildSystem() {
                 if (oldCount < 3) {
                     event.cancel = true;
                     system.run(() => {
-                        block.setPermutation(currentPerm.withState("cluster_count", oldCount + 1));
-                        const isCreative = [...world.getPlayers({ gameMode: "creative" })].some(p => p.id === player.id);
-                        if (!isCreative) {
-                            const mainhandSlot = equippable.getEquipmentSlot(EquipmentSlot.Mainhand);
-                            if (item.amount > 1) {
-                                item.amount -= 1; mainhandSlot.setItem(item);
-                            } else { mainhandSlot.setItem(undefined); }
+                        if (!player || !player.isValid) return;
+
+                        const currentBlock = player.dimension.getBlock(blockLoc);
+                        if (currentBlock && currentBlock.typeId === "minecraft:sea_pickle") {
+                            currentBlock.setPermutation(currentPerm.withState("cluster_count", oldCount + 1));
                         }
-                        player.playSound("sea_pickle.place", { location: block.location, pitch: 1.0, volume: 1.0 });
+
+                        const isCreative = [...world.getPlayers({ gameMode: GameMode.creative })].some(p => p.id === player.id);
+                        if (!isCreative) {
+                            // 呼叫安全扣除函數
+                            consumeHandItem(player, itemTypeId);
+                        }
+                        player.playSound("sea_pickle.place", { location: blockLoc, pitch: 1.0, volume: 1.0 });
                     });
                     return;
                 }
@@ -180,7 +224,7 @@ export function registerSpeedBuildSystem() {
         event.cancel = true;
 
         const face = event.blockFace.toLowerCase();
-        const faceLoc = event.faceLocation;
+        const faceLoc = { x: event.faceLocation.x, y: event.faceLocation.y, z: event.faceLocation.z };
 
         const offsets = {
             "up": { x: 0, y: 1, z: 0 }, "down": { x: 0, y: -1, z: 0 },
@@ -192,7 +236,7 @@ export function registerSpeedBuildSystem() {
         if (!offset) return;
 
         const targetLoc = {
-            x: block.location.x + offset.x, y: block.location.y + offset.y, z: block.location.z + offset.z
+            x: blockLoc.x + offset.x, y: blockLoc.y + offset.y, z: blockLoc.z + offset.z
         };
 
         let blockTypeId = itemTypeId;
@@ -203,7 +247,7 @@ export function registerSpeedBuildSystem() {
         let isTopHalf = false;
         if (face === "down") isTopHalf = true;
         else if (face === "up") isTopHalf = false;
-        else isTopHalf = faceLoc.y - block.location.y >= 0.5;
+        else isTopHalf = faceLoc.y - blockLoc.y >= 0.5;
 
         const rotY = player.getRotation().y;
         let weirdoDir = 2; let cardinalDir = "south"; let doorDir = 1; let trapdoorDir = 0;
@@ -223,6 +267,8 @@ export function registerSpeedBuildSystem() {
         else if (face === "north" || face === "south") pillarAxis = "z";
 
         system.run(() => {
+            if (!player || !player.isValid) return;
+
             const dimension = player.dimension;
             const targetBlock = dimension.getBlock(targetLoc);
             if (!targetBlock) return;
@@ -232,38 +278,33 @@ export function registerSpeedBuildSystem() {
                 const states = perm.getAllStates();
                 const isTwoTall = "upper_block_bit" in states;
 
-                // 🌟 核心救贖：把 setblock replace 神權給加回來！
-                // 針對草類、蘑菇等，動用絕對神權無視亮度與基岩限制
                 if (isFragilePlant(blockTypeId)) {
                     if (isTwoTall) {
                         const blockAbove = dimension.getBlock({ x: targetLoc.x, y: targetLoc.y + 1, z: targetLoc.z });
                         if (!blockAbove) return;
-                        dimension.runCommandAsync(`setblock ${targetLoc.x} ${targetLoc.y} ${targetLoc.z} ${blockTypeId} ["upper_block_bit":false] replace`);
-                        dimension.runCommandAsync(`setblock ${targetLoc.x} ${targetLoc.y + 1} ${targetLoc.z} ${blockTypeId} ["upper_block_bit":true] replace`);
+                        try { dimension.runCommand(`setblock ${targetLoc.x} ${targetLoc.y} ${targetLoc.z} ${blockTypeId} ["upper_block_bit":false] replace`); } catch (e) { }
+                        try { dimension.runCommand(`setblock ${targetLoc.x} ${targetLoc.y + 1} ${targetLoc.z} ${blockTypeId} ["upper_block_bit":true] replace`); } catch (e) { }
                     } else {
                         if (blockTypeId === "minecraft:sea_pickle") {
-                            dimension.runCommandAsync(`setblock ${targetLoc.x} ${targetLoc.y} ${targetLoc.z} ${blockTypeId} ["waterlogged":false] replace`);
+                            try { dimension.runCommand(`setblock ${targetLoc.x} ${targetLoc.y} ${targetLoc.z} ${blockTypeId} ["waterlogged":false] replace`); } catch (e) { }
                         } else {
-                            dimension.runCommandAsync(`setblock ${targetLoc.x} ${targetLoc.y} ${targetLoc.z} ${blockTypeId} replace`);
+                            try { dimension.runCommand(`setblock ${targetLoc.x} ${targetLoc.y} ${targetLoc.z} ${blockTypeId} replace`); } catch (e) { }
                         }
                     }
 
-                    const isCreative = [...world.getPlayers({ gameMode: "creative" })].some(p => p.id === player.id);
+                    const isCreative = [...world.getPlayers({ gameMode: GameMode.creative })].some(p => p.id === player.id);
                     if (!isCreative) {
-                        const mainhandSlot = equippable.getEquipmentSlot(EquipmentSlot.Mainhand);
-                        if (item.amount > 1) {
-                            item.amount -= 1; mainhandSlot.setItem(item);
-                        } else { mainhandSlot.setItem(undefined); }
+                        // 呼叫安全扣除函數
+                        consumeHandItem(player, itemTypeId);
                     }
                     if (blockTypeId === "minecraft:sea_pickle") {
                         player.playSound("sea_pickle.place", { location: targetLoc, pitch: 1.0, volume: 1.0 });
                     } else {
                         player.playSound("use.grass", { location: targetLoc, pitch: 1.0, volume: 1.0 });
                     }
-                    return; // 執行完神權指令，直接結束這次放置
+                    return;
                 }
 
-                // --- 針對活板門、柵欄門、半磚、一般門，維持完美的 BlockPermutation ---
                 let finalDirection = doorDir;
                 if (blockTypeId.includes("trapdoor") || blockTypeId.includes("fence_gate")) {
                     finalDirection = trapdoorDir;
@@ -276,7 +317,6 @@ export function registerSpeedBuildSystem() {
                 if ("pillar_axis" in states) perm = perm.withState("pillar_axis", pillarAxis);
                 if ("direction" in states) perm = perm.withState("direction", finalDirection);
 
-                // 強制關好門
                 if ("open_bit" in states) perm = perm.withState("open_bit", false);
 
                 if ("hanging" in states) { const isHanging = (face !== "up"); perm = perm.withState("hanging", isHanging); }
@@ -291,12 +331,10 @@ export function registerSpeedBuildSystem() {
                     targetBlock.setPermutation(perm);
                 }
 
-                const isCreative = [...world.getPlayers({ gameMode: "creative" })].some(p => p.id === player.id);
+                const isCreative = [...world.getPlayers({ gameMode: GameMode.creative })].some(p => p.id === player.id);
                 if (!isCreative) {
-                    const mainhandSlot = equippable.getEquipmentSlot(EquipmentSlot.Mainhand);
-                    if (item.amount > 1) {
-                        item.amount -= 1; mainhandSlot.setItem(item);
-                    } else { mainhandSlot.setItem(undefined); }
+                    // 呼叫安全扣除函數
+                    consumeHandItem(player, itemTypeId);
                 }
 
                 if (blockTypeId.includes("dripstone") || blockTypeId.includes("coral")) {

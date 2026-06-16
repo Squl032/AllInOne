@@ -15,6 +15,8 @@ export function registerWhitelistSystem() {
         const sendWelcome = (msg) => {
             system.runTimeout(() => {
                 try {
+                    // 🌟 核心防護 1：延遲 1 秒後，必須確認玩家還在線上才能發訊息，否則崩潰！
+                    if (!player || !player.isValid) return;
                     player.sendMessage(msg);
                 } catch (e) { }
             }, 20); // 20 ticks = 1 秒
@@ -81,8 +83,12 @@ export function registerWhitelistSystem() {
         if (!isApproved) {
             system.run(() => {
                 try {
+                    // 🌟 核心防護 2：確認玩家還在才執行踢出
+                    if (!player || !player.isValid) return;
+
                     const intruderName = player.name;
-                    player.dimension.runCommandAsync(`kick "${intruderName}" §cServer is whitelisted. You are not on the list! Contact an administrator.§r`);
+                    // 🌟 核心修正：替換掉被官方刪除的 runCommandAsync
+                    player.dimension.runCommand(`kick "${intruderName}" §cServer is whitelisted. You are not on the list! Contact an administrator.§r`);
 
                     const allPlayers = world.getAllPlayers();
                     for (const p of allPlayers) {
@@ -96,7 +102,7 @@ export function registerWhitelistSystem() {
             // 名單內玩家成功登入的歡迎訊息
             sendWelcome(`§e[System] §aWelcome back to the whitelisted server, §f${player.name}§a!`);
 
-            // 🌟 新增：通知所有在線上的管理員
+            // 新增：通知所有在線上的管理員
             system.run(() => {
                 const allPlayers = world.getAllPlayers();
                 for (const p of allPlayers) {

@@ -11,7 +11,8 @@ export function registerCrazySystem() {
         if (item.nameTag) {
             const lowerName = item.nameTag.toLowerCase();
             const hasKeyword = edibleKeywords.some(keyword => lowerName.includes(keyword));
-            const isVanillaFood = item.hasComponent("minecraft:food") || item.hasComponent("food");
+            // 雙重保險：用 getComponent 確保相容性
+            const isVanillaFood = !!(item.getComponent("minecraft:food") || item.getComponent("food"));
             return hasKeyword && !isVanillaFood;
         }
         return false;
@@ -55,7 +56,10 @@ export function registerCrazySystem() {
 
         player.playSound("random.eat", { pitch: 1.0, volume: 1.0 });
         system.runTimeout(() => {
-            player.playSound("random.burp", { pitch: 1.0, volume: 1.0 });
+            // 🌟 確保玩家吃完東西後還在線上，避免報錯
+            if (player.isValid) {
+                player.playSound("random.burp", { pitch: 1.0, volume: 1.0 });
+            }
         }, 10);
 
         player.addEffect("nausea", 160, { amplifier: 0, showParticles: true });
@@ -66,9 +70,9 @@ export function registerCrazySystem() {
     // --- 1. 對空氣按右鍵 (嚴格驗證觸發來源) ---
     world.afterEvents.itemUse.subscribe((event) => {
         const player = event.source;
-        const usedItem = event.itemStack; // 取得「真正觸發事件」的物品
+        const usedItem = event.itemStack;
 
-        if (!isCrazyItem(usedItem)) return; // 不是我們的狂暴物品就直接忽略
+        if (!isCrazyItem(usedItem)) return;
 
         const equippable = player.getComponent("equippable");
         const mainSlot = equippable.getEquipmentSlot(EquipmentSlot.Mainhand);
@@ -94,14 +98,10 @@ export function registerCrazySystem() {
         let activeSlot = null;
         let activeItem = null;
 
-        // 優先判定主手
         if (isCrazyItem(mainItem)) {
             activeSlot = mainSlot;
             activeItem = mainItem;
-        }
-        // 主手沒有才看副手
-        else if (isCrazyItem(offItem)) {
-            // 【跨腳本防禦】如果主手拿著農具或桶子，放棄執行狂暴，把權限讓給其他腳本
+        } else if (isCrazyItem(offItem)) {
             if (mainItem && (mainItem.typeId.includes("hoe") || mainItem.typeId.includes("bucket") || mainItem.typeId.includes("bowl"))) return;
 
             activeSlot = offSlot;
@@ -111,8 +111,12 @@ export function registerCrazySystem() {
         if (activeItem) executeCrazyAction(player, activeSlot, activeItem);
     };
 
-    world.afterEvents.playerInteractWithBlock.subscribe((event) => processInteract(event.player));
-    world.afterEvents.playerInteractWithEntity.subscribe((event) => processInteract(event.player));
+    if (world.afterEvents.playerInteractWithBlock) {
+        world.afterEvents.playerInteractWithBlock.subscribe((event) => processInteract(event.player));
+    }
+    if (world.afterEvents.playerInteractWithEntity) {
+        world.afterEvents.playerInteractWithEntity.subscribe((event) => processInteract(event.player));
+    }
 
     // ==========================================
     // Bedwars KB Stick (木棍擊退機制保留不變)
@@ -131,6 +135,10 @@ export function registerCrazySystem() {
 
             if (item && item.typeId === "minecraft:stick") {
                 system.run(() => {
+                    // 🌟 核心修正：跟 combat.js 一樣的實體存活防呆機制！
+                    if (!victim || !victim.isValid) return;
+                    if (!attacker || !attacker.isValid) return;
+
                     let dx = victim.location.x - attacker.location.x;
                     let dz = victim.location.z - attacker.location.z;
                     const distance = Math.sqrt(dx * dx + dz * dz);
