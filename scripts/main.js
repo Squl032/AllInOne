@@ -13,6 +13,7 @@ import { registerLeashSystem } from "./modules/leash.js";
 import { registerWhitelistSystem } from "./modules/whitelist.js";
 import { registerKnifeSystem } from "./modules/knife.js";
 import { registerGreenText } from "./modules/greenText.js";
+import { registerFaucetSystem } from "./modules/faucet.js";
 
 initializeSystem();
 
@@ -29,4 +30,5 @@ registerQuickStoreSystem();
 registerLeashSystem();
 registerWhitelistSystem();
 registerKnifeSystem();
-registerGreenText();    
+registerGreenText();
+registerFaucetSystem();

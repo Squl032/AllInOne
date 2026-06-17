@@ -4,9 +4,6 @@ const activeChairs = new Map();
 
 export function registerSitSystem() {
 
-    // ==========================================
-    // 🌟 自動大掃除：每次重啟/Reload時，自動清除所有殘留的幽靈座椅！
-    // ==========================================
     system.run(() => {
         for (const dimName of ["overworld", "nether", "the_end"]) {
             try {
@@ -40,13 +37,29 @@ export function registerSitSystem() {
         if (!isStair && !isSlab) return;
 
         let sitsOnTop = false;
+        let isWaterlogged = false;
 
         if (isSlab && typeId.includes("double")) {
             sitsOnTop = true;
         }
 
         try {
+            // 🌟 1. 現代屬性判斷法
+            if (block.isWaterlogged) {
+                isWaterlogged = true;
+            }
+
+            // 🌟 2. 舊版狀態判斷法
             const states = block.permutation.getAllStates();
+            if (states["waterlogged"] === true || states["minecraft:waterlogged"] === true) {
+                isWaterlogged = true;
+            }
+
+            // 🌟 3. 用戶提供的終極液體判斷法 (完美防漏)
+            if (block.getLiquid && block.getLiquid() && block.getLiquid().typeId === "minecraft:water") {
+                isWaterlogged = true;
+            }
+
             if (isStair && states["upside_down_bit"] === true) sitsOnTop = true;
             if (isSlab && !sitsOnTop) {
                 if (states["minecraft:vertical_half"] === "top") sitsOnTop = true;
@@ -77,23 +90,29 @@ export function registerSitSystem() {
             } catch (e) { }
             activeChairs.delete(player.id);
 
+            const sitsOnTopOffset = sitsOnTop ? 0.3 : -0.2;
+            const horseOffset = isWaterlogged ? -0.6 : 0;
+
             const spawnLoc = {
                 x: x + 0.5,
-                y: sitsOnTop ? y + 0.3 : y - 0.2,
+                y: y + sitsOnTopOffset + horseOffset,
                 z: z + 0.5
             };
 
-            const chair = dim.spawnEntity("minecraft:pig", spawnLoc);
+            const mountType = isWaterlogged ? "minecraft:skeleton_horse" : "minecraft:pig";
+            const chair = dim.spawnEntity(mountType, spawnLoc);
+
             chair.addTag(`chair_${player.id}`);
             chair.addTag("custom_chair");
 
-            try { chair.runCommand("event entity @s minecraft:on_saddled") } catch (e) { };
+            if (!isWaterlogged) {
+                try { chair.runCommand("event entity @s minecraft:on_saddled") } catch (e) { };
+            }
 
             chair.addEffect("invisibility", 999999, { amplifier: 255, showParticles: false });
             chair.addEffect("slowness", 999999, { amplifier: 255, showParticles: false });
             chair.addEffect("resistance", 999999, { amplifier: 255, showParticles: false });
 
-            // 🌟 核心修改 1：把「方塊原始座標(block.location)」也存進去
             activeChairs.set(player.id, { entity: chair, time: Date.now(), loc: spawnLoc, blockLoc: { x, y, z } });
 
             system.runTimeout(() => {
@@ -123,8 +142,14 @@ export function registerSitSystem() {
                     if (player && player.isValid) {
                         const rot = player.getRotation();
                         chairEntity.teleport(chairData.loc, { rotation: { x: 0, y: rot.y } });
-                        try { chairEntity.runCommand("stopsound @a[r=5] mob.pig.say") } catch (e) { }
-                        try { chairEntity.runCommand("stopsound @a[r=5] mob.pig.step") } catch (e) { }
+
+                        if (chairEntity.typeId === "minecraft:skeleton_horse") {
+                            try { chairEntity.runCommand("stopsound @a[r=5] mob.skeleton_horse.ambient") } catch (e) { }
+                            try { chairEntity.runCommand("stopsound @a[r=5] mob.skeleton_horse.water") } catch (e) { }
+                        } else {
+                            try { chairEntity.runCommand("stopsound @a[r=5] mob.pig.say") } catch (e) { }
+                            try { chairEntity.runCommand("stopsound @a[r=5] mob.pig.step") } catch (e) { }
+                        }
                     } else {
                         chairEntity.teleport(chairData.loc);
                     }
@@ -135,7 +160,7 @@ export function registerSitSystem() {
 
             let shouldRemove = false;
 
-            if (!player) {
+            if (!player || !player.isValid) {
                 shouldRemove = true;
             } else {
                 try {
@@ -144,14 +169,12 @@ export function registerSitSystem() {
                     const dz = player.location.z - chairEntity.location.z;
                     const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-                    // 1. 檢查是否自己下車或走遠
-                    if (distance > 1.5 || player.isSneaking) {
+                    if (distance > 1.8 || player.isSneaking) {
                         shouldRemove = true;
                     } else {
-                        // 🌟 核心修改 2：檢查屁股底下的方塊還在不在！
                         const currentBlock = player.dimension.getBlock(chairData.blockLoc);
                         if (!currentBlock || (!currentBlock.typeId.includes("stairs") && !currentBlock.typeId.includes("slab"))) {
-                            shouldRemove = true; // 如果方塊不見了或被換成別的東西，強制摔下來！
+                            shouldRemove = true;
                         }
                     }
                 } catch (e) {
@@ -160,7 +183,7 @@ export function registerSitSystem() {
             }
 
             if (shouldRemove) {
-                try { chairEntity.remove(); } catch (e) { }
+                try { if (chairEntity && chairEntity.isValid) chairEntity.remove(); } catch (e) { }
                 activeChairs.delete(playerId);
             }
         }
