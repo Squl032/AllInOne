@@ -14,6 +14,9 @@ import { registerWhitelistSystem } from "./modules/whitelist.js";
 import { registerKnifeSystem } from "./modules/knife.js";
 import { registerGreenText } from "./modules/greenText.js";
 import { registerFaucetSystem } from "./modules/faucet.js";
+import { registerDoubleDoorSystem } from "./modules/doubleDoor.js";
+import { registerSlidingDoorSystem } from "./modules/slidingDoor.js";
+import { registerHiddenGlassPaneSystem } from "./modules/glasspanehide.js";
 
 initializeSystem();
 
@@ -32,3 +35,6 @@ registerWhitelistSystem();
 registerKnifeSystem();
 registerGreenText();
 registerFaucetSystem();
+registerDoubleDoorSystem();
+registerSlidingDoorSystem();
+registerHiddenGlassPaneSystem();
