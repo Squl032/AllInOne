@@ -24,8 +24,16 @@ export function registerSitSystem() {
 
         const equippable = player.getComponent("equippable");
         if (equippable) {
+            // 保留原本仙人掌頭盔的判定
             const headItem = equippable.getEquipmentSlot(EquipmentSlot.Head).getItem();
             if (headItem && headItem.typeId === "minecraft:cactus") {
+                return;
+            }
+
+            // 🌟 新增：空手檢查 (Empty Hand Check)
+            // 如果玩家主手有拿任何物品，直接結束執行，不會坐下，讓你安心蓋方塊！
+            const mainItem = equippable.getEquipmentSlot(EquipmentSlot.Mainhand).getItem();
+            if (mainItem) {
                 return;
             }
         }
@@ -44,18 +52,16 @@ export function registerSitSystem() {
         }
 
         try {
-            // 🌟 1. 現代屬性判斷法
+            // 🌟 保留之前完美修復的浴缸判定
             if (block.isWaterlogged) {
                 isWaterlogged = true;
             }
-
-            // 🌟 2. 舊版狀態判斷法
+            
             const states = block.permutation.getAllStates();
             if (states["waterlogged"] === true || states["minecraft:waterlogged"] === true) {
                 isWaterlogged = true;
             }
 
-            // 🌟 3. 用戶提供的終極液體判斷法 (完美防漏)
             if (block.getLiquid && block.getLiquid() && block.getLiquid().typeId === "minecraft:water") {
                 isWaterlogged = true;
             }
@@ -91,7 +97,7 @@ export function registerSitSystem() {
             activeChairs.delete(player.id);
 
             const sitsOnTopOffset = sitsOnTop ? 0.3 : -0.2;
-            const horseOffset = isWaterlogged ? -0.6 : 0;
+            const horseOffset = isWaterlogged ? -0.6 : 0; 
 
             const spawnLoc = {
                 x: x + 0.5,
@@ -101,7 +107,7 @@ export function registerSitSystem() {
 
             const mountType = isWaterlogged ? "minecraft:skeleton_horse" : "minecraft:pig";
             const chair = dim.spawnEntity(mountType, spawnLoc);
-
+            
             chair.addTag(`chair_${player.id}`);
             chair.addTag("custom_chair");
 
@@ -142,7 +148,7 @@ export function registerSitSystem() {
                     if (player && player.isValid) {
                         const rot = player.getRotation();
                         chairEntity.teleport(chairData.loc, { rotation: { x: 0, y: rot.y } });
-
+                        
                         if (chairEntity.typeId === "minecraft:skeleton_horse") {
                             try { chairEntity.runCommand("stopsound @a[r=5] mob.skeleton_horse.ambient") } catch (e) { }
                             try { chairEntity.runCommand("stopsound @a[r=5] mob.skeleton_horse.water") } catch (e) { }
@@ -174,7 +180,7 @@ export function registerSitSystem() {
                     } else {
                         const currentBlock = player.dimension.getBlock(chairData.blockLoc);
                         if (!currentBlock || (!currentBlock.typeId.includes("stairs") && !currentBlock.typeId.includes("slab"))) {
-                            shouldRemove = true;
+                            shouldRemove = true; 
                         }
                     }
                 } catch (e) {
