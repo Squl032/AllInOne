@@ -17,6 +17,7 @@ import { registerFaucetSystem } from "./modules/faucet.js";
 import { registerDoubleDoorSystem } from "./modules/doubleDoor.js";
 import { registerSlidingDoorSystem } from "./modules/slidingDoor.js";
 import { registerHiddenGlassPaneSystem } from "./modules/glasspanehide.js";
+import { registerKnockbackSystem } from "./modules/knockback.js";
 
 initializeSystem();
 
@@ -38,3 +39,4 @@ registerFaucetSystem();
 registerDoubleDoorSystem();
 registerSlidingDoorSystem();
 registerHiddenGlassPaneSystem();
+registerKnockbackSystem();
