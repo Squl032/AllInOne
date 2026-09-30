@@ -12,20 +12,6 @@ export function registerCombatSystem() {
                 if (!victim || !victim.isValid) return;
                 if (attacker && !attacker.isValid) return;
 
-                // --- 物理擊退 ---
-                if (attacker && attacker.typeId === "minecraft:player") {
-                    let dx = victim.location.x - attacker.location.x;
-                    let dz = victim.location.z - attacker.location.z;
-                    const distance = Math.sqrt(dx * dx + dz * dz);
-                    const force = Math.PI / 10 + 0.043;
-                    const verticalBoost = Math.PI / 10 + 0.0785;
-
-                    if (distance > 0) {
-                        victim.clearVelocity();
-                        victim.applyImpulse({ x: (dx / distance) * verticalBoost, y: force, z: (dz / distance) * verticalBoost });
-                    }
-                }
-
                 // --- 顯示層 ---
                 const healthComp = victim.getComponent("minecraft:health");
                 if (healthComp) {
